@@ -45,10 +45,20 @@ outlook-cli mail watch
 
 ## 開発
 
+リポジトリのルートで mise を使ってビルド、テスト、実行できます。.NET SDK の選択条件は `global.json` に定義しています。
+
 ```powershell
-dotnet build
-dotnet run --project src/OutlookCli -- mail list --unread
-dotnet test
+mise run build
+mise run test
+mise run run -- mail list --unread
+```
+
+`run` は Release ビルド済みの `outlook-cli.exe` に `--` 以降の引数を渡します。CLI を変更したら `mise run build` を再実行してください。`run` の標準出力は、そのまま PowerShell のパイプに渡せます。
+
+```powershell
+mise run run -- mail list --unread |
+    ForEach-Object { $_ | ConvertFrom-Json } |
+    Format-List entryId, receivedAt, senderName, subject
 ```
 
 `OutlookCli.Core` が `IMailQuery` とデータ型を定義し、`OutlookCli.OutlookCom` がクラシック Outlook に接続します。コマンドのテストでは `IMailQuery` をスタブに差し替えるため、Outlook のインストールは不要です。

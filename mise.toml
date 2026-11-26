@@ -1,0 +1,13 @@
+[tasks.build]
+description = "ソリューションを Release 構成でビルドする"
+run = "dotnet build OutlookCli.slnx -c Release"
+
+[tasks.test]
+description = "スタブを使ったコマンドテストを実行する"
+run = "dotnet test OutlookCli.slnx -c Release"
+
+[tasks.run]
+description = "ビルド済みの Outlook CLI を実行する"
+run = '.\src\OutlookCli\bin\Release\net10.0-windows\outlook-cli.exe'
+raw = true
+quiet = true
