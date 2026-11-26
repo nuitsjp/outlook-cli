@@ -208,7 +208,7 @@ public sealed class ProgramTests
 
         static IEnumerable<MailSummary> ReadThenFail()
         {
-            yield return new MailSummary("取得済み", "差出人", DateTimeOffset.UnixEpoch, "entry-1");
+            yield return new MailSummary("取得済み", "差出人", DateTimeOffset.FromUnixTimeSeconds(0), "entry-1");
             throw new COMException("Outlook failed", unchecked((int)0x80004005));
         }
     }

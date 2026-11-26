@@ -22,7 +22,7 @@ internal sealed class MailShowCommand(IMailQuery query, TextWriter output, TextW
 
     private int Execute(string? entryId)
     {
-        if (string.IsNullOrWhiteSpace(entryId))
+        if (entryId is null || string.IsNullOrWhiteSpace(entryId))
         {
             error.WriteLine("--entry-id にメールの Entry ID を指定してください。");
             return 1;

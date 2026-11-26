@@ -7,7 +7,7 @@ internal sealed class OutlookInbox : IDisposable
 {
     private const int InboxFolder = 6; // OlDefaultFolders.olFolderInbox
     internal const int MailItemClass = 43; // OlObjectClass.olMail
-    private static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(20);
+    private const int ShutdownTimeoutMilliseconds = 20_000;
 
     private Process? startedOutlook;
     private object? application;
@@ -85,7 +85,7 @@ internal sealed class OutlookInbox : IDisposable
 
         // Outlook started by COM can exit after the last reference is released.
         // Quit would also close a window the user opened during the query.
-        if (outlookToWaitFor is not null && !outlookToWaitFor.WaitForExit(ShutdownTimeout))
+        if (outlookToWaitFor is not null && !outlookToWaitFor.WaitForExit(ShutdownTimeoutMilliseconds))
         {
             throw new InvalidOperationException(
                 $"COM 参照の解放後も Outlook (PID {outlookToWaitFor.Id}) が終了しませんでした。");

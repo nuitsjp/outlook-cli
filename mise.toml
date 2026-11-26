@@ -8,6 +8,10 @@ run = "dotnet test OutlookCli.slnx -c Release"
 
 [tasks.run]
 description = "ビルド済みの Outlook CLI を実行する"
-run = '.\src\OutlookCli\bin\Release\net10.0-windows\outlook-cli.exe'
+run = '.\src\OutlookCli\bin\Release\net481\outlook-cli.exe'
 raw = true
 quiet = true
+
+[tasks.release]
+description = "バージョンタグを作成して origin にプッシュする"
+run = "powershell.exe -NoLogo -NoProfile -File scripts/Release.ps1"

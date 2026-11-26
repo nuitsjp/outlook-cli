@@ -24,7 +24,7 @@ internal sealed class MailReadStateCommand(IMailReadStateUpdater updater, TextWr
 
     private int Execute(string? entryId, bool unread)
     {
-        if (string.IsNullOrWhiteSpace(entryId))
+        if (entryId is null || string.IsNullOrWhiteSpace(entryId))
         {
             error.WriteLine("--entry-id にメールの Entry ID を指定してください。");
             return 1;

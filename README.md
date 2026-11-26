@@ -1,6 +1,18 @@
 # outlook-cli
 
-クラシック Outlook の既定の受信トレイにあるメールを取得し、既読・未読を変更できる Windows 用 CLI です。実行には、設定済みの Outlook プロファイルと .NET 10 ランタイムが必要です。
+クラシック Outlook の既定の受信トレイにあるメールを取得し、既読・未読を変更できる Windows 用 CLI です。実行には、設定済みの Outlook プロファイルと .NET Framework 4.8.1 が必要です。
+
+## インストールと更新
+
+Windows x64 では、[GitHub Releases](https://github.com/R0007-RJ-SolDev/outlook-cli/releases) から `outlook-cli-<バージョン>-setup.exe` を取得して実行します。署名なしの Inno Setup インストーラーで、管理者権限を使わずにユーザー単位でインストールします。.NET Framework 4.8.1 は事前にインストールしてください。
+
+既定のインストール先で PowerShell から動作を確認できます。
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\outlook-cli\outlook-cli.exe" --version
+```
+
+以下の例のように `outlook-cli` と名前だけで起動するには、インストール先をユーザーの `Path` に追加します。更新時は GitHub Releases から新しいインストーラーを取得し、実行します。
 
 ## 使い方
 
@@ -45,7 +57,7 @@ outlook-cli mail watch
 
 ## 開発
 
-リポジトリのルートで mise を使ってビルド、テスト、実行できます。.NET SDK の選択条件は `global.json` に定義しています。
+リポジトリのルートで mise を使ってビルド、テスト、実行できます。ビルドには `global.json` に指定した .NET 10 SDK を使用し、実行ファイルは .NET Framework 4.8.1 を対象にします。
 
 ```powershell
 mise run build
@@ -62,3 +74,14 @@ mise run run -- mail list --unread |
 ```
 
 `OutlookCli.Core` が `IMailQuery` とデータ型を定義し、`OutlookCli.OutlookCom` がクラシック Outlook に接続します。コマンドのテストでは `IMailQuery` をスタブに差し替えるため、Outlook のインストールは不要です。
+
+## リリース
+
+配布するコミットをチェックアウトし、次のいずれかを実行します。
+
+```powershell
+mise run release          # 最新の vX.Y.Z タグからパッチ番号を1増やす
+mise run release -- 1.2.0 # バージョンを指定する
+```
+
+安定版のタグがない場合、バージョンを省略した初回リリースは `v0.1.0` です。バージョンの各要素は、Windows のファイルバージョンに合わせて `0` から `65534` までです。タスクは現在のコミットに `vX.Y.Z` タグを作成し、そのタグを `origin` にプッシュします。タグのプッシュで GitHub Actions が起動し、テストを実行したうえでインストーラーをビルドし、GitHub Releases に発行します。

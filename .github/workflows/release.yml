@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-2022
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Validate release tag
+        id: version
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -cnotmatch '^v(0|[1-9][0-9]{0,4})\.(0|[1-9][0-9]{0,4})\.(0|[1-9][0-9]{0,4})$') {
+            throw "Release tags must use vX.Y.Z; received '$tag'."
+          }
+          $version = [version]::Parse($tag.Substring(1))
+          if ($version.Major -gt 65534 -or $version.Minor -gt 65534 -or $version.Build -gt 65534) {
+            throw "Release tag components must be between 0 and 65534; received '$tag'."
+          }
+          "value=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Set up the .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Run tests
+        run: dotnet test OutlookCli.slnx -c Release
+
+      - name: Build the unsigned installer
+        id: package
+        shell: pwsh
+        env:
+          APP_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          $publishDir = Join-Path $env:RUNNER_TEMP 'outlook-cli-publish'
+          dotnet publish src/OutlookCli/OutlookCli.csproj -c Release --no-restore -o $publishDir `
+            "-p:Version=$env:APP_VERSION" -p:IncludeSourceRevisionInInformationalVersion=false
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $innoSetup = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.4.exe'
+          $innoHome = Join-Path $env:RUNNER_TEMP 'inno'
+          Invoke-WebRequest -Uri 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe' -OutFile $innoSetup
+          $hash = (Get-FileHash -LiteralPath $innoSetup -Algorithm SHA256).Hash
+          if ($hash -ne 'A549929319F9120716677C685535CA4671E4B937B5FDC87E2585F32D8EB30E8C') {
+            throw 'Inno Setup download has an unexpected SHA256 digest.'
+          }
+          $innoProcess = Start-Process -FilePath $innoSetup -WindowStyle Hidden -Wait -PassThru `
+            -ArgumentList @('/PORTABLE=1', '/CURRENTUSER', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$innoHome`"")
+          if ($innoProcess.ExitCode -ne 0) { throw "Inno Setup exited with code $($innoProcess.ExitCode)." }
+
+          & (Join-Path $innoHome 'ISCC.exe') "/DAppVersion=$env:APP_VERSION" "/DSourceDir=$publishDir" `
+            "/DOutputDir=$env:RUNNER_TEMP" setup/OutlookCli.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "installer=$(Join-Path $env:RUNNER_TEMP "outlook-cli-$env:APP_VERSION-setup.exe")" >> $env:GITHUB_OUTPUT
+
+      - name: Smoke test the installed CLI
+        shell: pwsh
+        env:
+          APP_VERSION: ${{ steps.version.outputs.value }}
+          INSTALLER: ${{ steps.package.outputs.installer }}
+        run: |
+          $quietArgs = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART')
+          $install = Start-Process -FilePath $env:INSTALLER -ArgumentList ($quietArgs + '/SP-') -WindowStyle Hidden -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "Installer exited with code $($install.ExitCode)." }
+
+          $installDir = Join-Path $env:LOCALAPPDATA 'Programs\outlook-cli'
+          $cli = Join-Path $installDir 'outlook-cli.exe'
+          $version = (& $cli --version | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0 -or $version -ne $env:APP_VERSION) {
+            throw "Installed CLI reported '$version'; expected '$env:APP_VERSION'."
+          }
+
+          $uninstall = Start-Process -FilePath (Join-Path $installDir 'unins000.exe') `
+            -ArgumentList $quietArgs -WindowStyle Hidden -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0 -or (Test-Path -LiteralPath $cli)) {
+            throw "Uninstall failed with code $($uninstall.ExitCode)."
+          }
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INSTALLER: ${{ steps.package.outputs.installer }}
+        run: gh release create $env:GITHUB_REF_NAME $env:INSTALLER --repo $env:GITHUB_REPOSITORY --verify-tag --generate-notes

@@ -1,13 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
     <AssemblyName>outlook-cli</AssemblyName>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="System.CommandLine" Version="2.0.5" />
+    <PackageReference Include="System.Text.Json" Version="10.0.12" />
     <ProjectReference Include="../OutlookCli.Core/OutlookCli.Core.csproj" />
     <ProjectReference Include="../OutlookCli.OutlookCom/OutlookCli.OutlookCom.csproj" />
     <InternalsVisibleTo Include="OutlookCli.Tests" />
