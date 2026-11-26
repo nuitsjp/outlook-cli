@@ -12,7 +12,7 @@ Windows x64 では、[GitHub Releases](https://github.com/R0007-RJ-SolDev/outloo
 & "$env:LOCALAPPDATA\Programs\outlook-cli\outlook-cli.exe" --version
 ```
 
-以下の例のように `outlook-cli` と名前だけで起動するには、インストール先をユーザーの `Path` に追加します。更新時は GitHub Releases から新しいインストーラーを取得し、実行します。
+インストーラーは `%LOCALAPPDATA%\Microsoft\WinGet\Links` に起動用の shim を作成します。この共通フォルダーがすでに `Path` に登録されていれば、`Path` の変更なしで `outlook-cli` と名前だけで起動できます。アンインストール時に shim も削除されます。更新時は GitHub Releases から新しいインストーラーを取得し、実行します。
 
 ## 使い方
 

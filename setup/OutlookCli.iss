@@ -2,6 +2,8 @@
 ; configure an Inno Setup SignTool.
 
 #define AppName "outlook-cli"
+#define ShimDir "{localappdata}\Microsoft\WinGet\Links"
+#define ShimRegistry "Software\OutlookCli\Shim"
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
@@ -9,6 +11,10 @@
 
 #ifndef SourceDir
   #define SourceDir "..\src\OutlookCli\bin\Release\net481"
+#endif
+
+#ifndef ShimFile
+  #define ShimFile "..\src\OutlookCli.Shim\bin\Release\net481\outlook-cli-shim.exe"
 #endif
 
 #ifndef OutputDir
@@ -39,6 +45,10 @@ VersionInfoCompany=outlook-cli
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#ShimFile}"; DestDir: "{#ShimDir}"; DestName: "outlook-cli.exe"; Flags: ignoreversion
+
+[Registry]
+Root: HKCU; Subkey: "{#ShimRegistry}"; ValueType: string; ValueName: "Target"; ValueData: "{app}\outlook-cli.exe"; Flags: uninsdeletevalue uninsdeletekeyifempty
 
 [Code]
 const
@@ -63,4 +73,23 @@ begin
       'outlook-cli requires .NET Framework 4.8.1 or later. Install that prerequisite and run this installer again.',
       mbError,
       MB_OK);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ExistingShim: TFindRec;
+begin
+  Result := '';
+  if CompareText(RemoveBackslashUnlessRoot(ExpandConstant('{app}')), ExpandConstant('{#ShimDir}')) = 0 then
+  begin
+    Result := 'Choose an installation directory outside WinGet Links.';
+    Exit;
+  end;
+
+  if FindFirst(ExpandConstant('{#ShimDir}\outlook-cli.exe'), ExistingShim) then
+  begin
+    FindClose(ExistingShim);
+    if not RegValueExists(HKCU, '{#ShimRegistry}', 'Target') then
+      Result := 'An existing outlook-cli.exe in WinGet Links is managed outside this installer.';
+  end;
 end;

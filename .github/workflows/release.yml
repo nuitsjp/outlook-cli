@@ -51,6 +51,10 @@ jobs:
             "-p:Version=$env:APP_VERSION" -p:IncludeSourceRevisionInInformationalVersion=false
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+          $shimDir = Join-Path $env:RUNNER_TEMP 'outlook-cli-shim'
+          dotnet build src/OutlookCli.Shim/OutlookCli.Shim.csproj -c Release -o $shimDir
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
           $innoSetup = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.4.exe'
           $innoHome = Join-Path $env:RUNNER_TEMP 'inno'
           Invoke-WebRequest -Uri 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe' -OutFile $innoSetup
@@ -63,7 +67,7 @@ jobs:
           if ($innoProcess.ExitCode -ne 0) { throw "Inno Setup exited with code $($innoProcess.ExitCode)." }
 
           & (Join-Path $innoHome 'ISCC.exe') "/DAppVersion=$env:APP_VERSION" "/DSourceDir=$publishDir" `
-            "/DOutputDir=$env:RUNNER_TEMP" setup/OutlookCli.iss
+            "/DShimFile=$(Join-Path $shimDir 'outlook-cli-shim.exe')" "/DOutputDir=$env:RUNNER_TEMP" setup/OutlookCli.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "installer=$(Join-Path $env:RUNNER_TEMP "outlook-cli-$env:APP_VERSION-setup.exe")" >> $env:GITHUB_OUTPUT
 
@@ -74,20 +78,31 @@ jobs:
           INSTALLER: ${{ steps.package.outputs.installer }}
         run: |
           $quietArgs = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART')
+          $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+          $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
           $install = Start-Process -FilePath $env:INSTALLER -ArgumentList ($quietArgs + '/SP-') -WindowStyle Hidden -Wait -PassThru
           if ($install.ExitCode -ne 0) { throw "Installer exited with code $($install.ExitCode)." }
 
           $installDir = Join-Path $env:LOCALAPPDATA 'Programs\outlook-cli'
           $cli = Join-Path $installDir 'outlook-cli.exe'
-          $version = (& $cli --version | Out-String).Trim()
+          $shim = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\outlook-cli.exe'
+          $version = (& $shim --version | Out-String).Trim()
           if ($LASTEXITCODE -ne 0 -or $version -ne $env:APP_VERSION) {
-            throw "Installed CLI reported '$version'; expected '$env:APP_VERSION'."
+            throw "The shim reported '$version'; expected '$env:APP_VERSION'."
+          }
+          if ([Environment]::GetEnvironmentVariable('Path', 'User') -cne $userPath -or
+              [Environment]::GetEnvironmentVariable('Path', 'Machine') -cne $machinePath) {
+            throw 'Installation changed Path.'
           }
 
           $uninstall = Start-Process -FilePath (Join-Path $installDir 'unins000.exe') `
             -ArgumentList $quietArgs -WindowStyle Hidden -Wait -PassThru
-          if ($uninstall.ExitCode -ne 0 -or (Test-Path -LiteralPath $cli)) {
+          if ($uninstall.ExitCode -ne 0 -or (Test-Path -LiteralPath $cli) -or (Test-Path -LiteralPath $shim)) {
             throw "Uninstall failed with code $($uninstall.ExitCode)."
+          }
+          if ([Environment]::GetEnvironmentVariable('Path', 'User') -cne $userPath -or
+              [Environment]::GetEnvironmentVariable('Path', 'Machine') -cne $machinePath) {
+            throw 'Uninstall changed Path.'
           }
 
       - name: Publish GitHub Release
