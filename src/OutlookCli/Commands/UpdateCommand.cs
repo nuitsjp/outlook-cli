@@ -28,7 +28,8 @@ internal sealed class UpdateCommand(JsonOutput json, TextWriter error)
             }
 
             using var http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false });
-            var updater = new ReleaseUpdater(http, new UpdateInstaller().Start);
+            var updater = new ReleaseUpdater(http, new UpdateInstaller().Start,
+                (current, latest) => ConfirmUpdate(Console.In, error, current, latest));
             var result = await updater.UpdateAsync(
                 assembly.GetName().Version!, Path.GetDirectoryName(assembly.Location)!, cancellationToken);
             json.WriteLine(new
@@ -57,5 +58,13 @@ internal sealed class UpdateCommand(JsonOutput json, TextWriter error)
             error.WriteLine($"更新を準備できませんでした。{exception.Message}");
             return 1;
         }
+    }
+
+    internal static bool ConfirmUpdate(TextReader input, TextWriter error, string current, string latest)
+    {
+        error.Write($"現在のバージョン {current} を {latest} に更新しますか？ [Y/n] ");
+        error.Flush();
+        var reply = input.ReadLine()?.Trim();
+        return reply == string.Empty || string.Equals(reply, "y", StringComparison.OrdinalIgnoreCase);
     }
 }

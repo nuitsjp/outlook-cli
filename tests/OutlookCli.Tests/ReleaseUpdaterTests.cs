@@ -23,8 +23,10 @@ public sealed class ReleaseUpdaterTests
         var digest = Sha256Digest(payload);
         var installerName = "outlook-cli-1.2.4-setup.exe";
         var downloadUrl = "https://downloads.example.test/" + installerName;
+        var events = new List<string>();
         var handler = new RecordingHandler(request =>
         {
+            events.Add(request.RequestUri!.AbsoluteUri);
             if (request.RequestUri!.AbsoluteUri == LatestUrl)
             {
                 AssertApiRequest(request, "application/vnd.github+json");
@@ -55,6 +57,7 @@ public sealed class ReleaseUpdaterTests
         using var client = new HttpClient(handler);
         string? handedOffPath = null;
         string? handedOffInstallDirectory = null;
+        var confirmations = new List<(string Current, string Latest)>();
         var logPath = Path.Combine(fixture.Path, "update.log");
         var updater = new ReleaseUpdater(client, (path, installDirectory) =>
         {
@@ -66,6 +69,11 @@ public sealed class ReleaseUpdaterTests
             // The staged path is intentionally left for the handed-off
             // installer process; this test only cleans up its own fixture.
             return logPath;
+        }, (current, latest) =>
+        {
+            confirmations.Add((current, latest));
+            events.Add("confirm");
+            return true;
         });
 
         var result = await updater.UpdateAsync(
@@ -77,6 +85,8 @@ public sealed class ReleaseUpdaterTests
         Assert.Equal(logPath, result.LogPath);
         Assert.NotNull(handedOffPath);
         Assert.Equal(fixture.Path, handedOffInstallDirectory);
+        Assert.Equal([("1.2.3", "1.2.4")], confirmations);
+        Assert.Equal([LatestUrl, "confirm", AssetUrl, downloadUrl], events);
 
         Assert.Equal(
             [LatestUrl, AssetUrl, downloadUrl],
@@ -85,6 +95,41 @@ public sealed class ReleaseUpdaterTests
         {
             Assert.Null(request.Authorization);
         });
+    }
+
+    [Fact]
+    public async Task Declined_update_keeps_versions_without_downloading_or_handoff()
+    {
+        using var fixture = new OwnedDirectory();
+        var payload = Encoding.UTF8.GetBytes("installer bytes");
+        var installerName = "outlook-cli-1.2.4-setup.exe";
+        var handler = new RecordingHandler(request =>
+        {
+            if (request.RequestUri.AbsoluteUri == LatestUrl)
+            {
+                return Reply(JsonResponse(ReleaseJson(
+                    "1.2.4", new object[] { Asset(123, installerName, Sha256Digest(payload)) })));
+            }
+
+            return Failure<HttpResponseMessage>("A declined update must not download the asset");
+        });
+        using var client = new HttpClient(handler);
+        var handoffCount = 0;
+        var updater = new ReleaseUpdater(client, (_, _) =>
+        {
+            handoffCount++;
+            return "must-not-start";
+        }, (_, _) => false);
+
+        var result = await updater.UpdateAsync(
+            new Version(1, 2, 3), fixture.Path, CancellationToken.None);
+
+        Assert.Equal("1.2.3", result.CurrentVersion);
+        Assert.Equal("1.2.4", result.LatestVersion);
+        Assert.Equal("declined", result.Status);
+        Assert.Null(result.LogPath);
+        Assert.Equal(0, handoffCount);
+        Assert.Single(handler.Requests);
     }
 
     [Theory]
@@ -100,10 +145,15 @@ public sealed class ReleaseUpdaterTests
         });
         using var client = new HttpClient(handler);
         var handoffCount = 0;
+        var confirmationCount = 0;
         var updater = new ReleaseUpdater(client, (_, _) =>
         {
             handoffCount++;
             return "must-not-start";
+        }, (_, _) =>
+        {
+            confirmationCount++;
+            return true;
         });
 
         var result = await updater.UpdateAsync(
@@ -114,6 +164,7 @@ public sealed class ReleaseUpdaterTests
         Assert.Equal("up-to-date", result.Status);
         Assert.Null(result.LogPath);
         Assert.Equal(0, handoffCount);
+        Assert.Equal(0, confirmationCount);
         Assert.Single(handler.Requests);
     }
 
@@ -146,7 +197,7 @@ public sealed class ReleaseUpdaterTests
         {
             handoffCount++;
             return "must-not-start";
-        });
+        }, AllowUpdate);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => updater.UpdateAsync(
             new Version(1, 2, 3), fixture.Path, CancellationToken.None));
@@ -173,7 +224,7 @@ public sealed class ReleaseUpdaterTests
                 "1.2.4", new object[] { Asset(123, installerName, digest) })));
         });
         using var client = new HttpClient(handler);
-        var updater = new ReleaseUpdater(client, (_, _) => "must-not-start");
+        var updater = new ReleaseUpdater(client, (_, _) => "must-not-start", AllowUpdate);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => updater.UpdateAsync(
             new Version(1, 2, 3), fixture.Path, CancellationToken.None));
@@ -194,7 +245,7 @@ public sealed class ReleaseUpdaterTests
                 new object[] { Asset(123, "outlook-cli-1.2.4-setup.exe.asc", Sha256Digest(payload)) })));
         });
         using var client = new HttpClient(handler);
-        var updater = new ReleaseUpdater(client, (_, _) => "must-not-start");
+        var updater = new ReleaseUpdater(client, (_, _) => "must-not-start", AllowUpdate);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => updater.UpdateAsync(
             new Version(1, 2, 3), fixture.Path, CancellationToken.None));
@@ -217,7 +268,7 @@ public sealed class ReleaseUpdaterTests
                 "1.2.4", new object[] { Asset(assetId, installerName, Sha256Digest(payload)) })));
         });
         using var client = new HttpClient(handler);
-        var updater = new ReleaseUpdater(client, (_, _) => "must-not-start");
+        var updater = new ReleaseUpdater(client, (_, _) => "must-not-start", AllowUpdate);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => updater.UpdateAsync(
             new Version(1, 2, 3), fixture.Path, CancellationToken.None));
@@ -243,7 +294,7 @@ public sealed class ReleaseUpdaterTests
                 })));
         });
         using var client = new HttpClient(handler);
-        var updater = new ReleaseUpdater(client, (_, _) => "must-not-start");
+        var updater = new ReleaseUpdater(client, (_, _) => "must-not-start", AllowUpdate);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => updater.UpdateAsync(
             new Version(1, 2, 3), fixture.Path, CancellationToken.None));
@@ -269,7 +320,7 @@ public sealed class ReleaseUpdaterTests
             return Reply(JsonResponse(body));
         });
         using var client = new HttpClient(handler);
-        var updater = new ReleaseUpdater(client, (_, _) => "must-not-start");
+        var updater = new ReleaseUpdater(client, (_, _) => "must-not-start", AllowUpdate);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => updater.UpdateAsync(
             new Version(1, 2, 3), fixture.Path, CancellationToken.None));
@@ -289,7 +340,7 @@ public sealed class ReleaseUpdaterTests
         {
             handoffCount++;
             return "must-not-start";
-        });
+        }, AllowUpdate);
 
         var actual = await Assert.ThrowsAsync<HttpRequestException>(() => updater.UpdateAsync(
             new Version(1, 2, 3), fixture.Path, CancellationToken.None));
@@ -304,7 +355,7 @@ public sealed class ReleaseUpdaterTests
         using var fixture = new OwnedDirectory();
         var handler = new RecordingHandler(_ => Reply(new HttpResponseMessage(HttpStatusCode.InternalServerError)));
         using var client = new HttpClient(handler);
-        var updater = new ReleaseUpdater(client, (_, _) => "must-not-start");
+        var updater = new ReleaseUpdater(client, (_, _) => "must-not-start", AllowUpdate);
 
         await Assert.ThrowsAsync<HttpRequestException>(() => updater.UpdateAsync(
             new Version(1, 2, 3), fixture.Path, CancellationToken.None));
@@ -339,7 +390,7 @@ public sealed class ReleaseUpdaterTests
         {
             handoffCount++;
             return "must-not-start";
-        });
+        }, AllowUpdate);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => updater.UpdateAsync(
             new Version(1, 2, 3), fixture.Path, CancellationToken.None));
@@ -376,13 +427,15 @@ public sealed class ReleaseUpdaterTests
             var directory = Directory.GetParent(path)!.FullName;
             stagingDirectories.Add(directory);
             return "log";
-        });
+        }, AllowUpdate);
 
         await updater.UpdateAsync(new Version(1, 2, 3), fixture.Path, CancellationToken.None);
         await updater.UpdateAsync(new Version(1, 2, 3), fixture.Path, CancellationToken.None);
 
         Assert.Equal(2, stagingDirectories.Distinct(StringComparer.OrdinalIgnoreCase).Count());
     }
+
+    private static bool AllowUpdate(string currentVersion, string latestVersion) => true;
 
     private static void AssertApiRequest(HttpRequestMessage request, string accept)
     {

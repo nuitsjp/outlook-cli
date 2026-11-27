@@ -8,7 +8,8 @@ using System.Text.Json.Serialization;
 
 namespace OutlookCli.Updates;
 
-internal sealed class ReleaseUpdater(HttpClient httpClient, Func<string, string, string> startInstaller)
+internal sealed class ReleaseUpdater(
+    HttpClient httpClient, Func<string, string, string> startInstaller, Func<string, string, bool> confirmUpdate)
 {
     private const string ReleasesUrl = "https://api.github.com/repos/nuitsjp/outlook-cli/releases";
 
@@ -63,6 +64,12 @@ internal sealed class ReleaseUpdater(HttpClient httpClient, Func<string, string,
             || !digest.Skip(digestPrefix.Length).All(Uri.IsHexDigit))
         {
             throw new InvalidOperationException("インストーラーの SHA-256 を GitHub Releases から取得できませんでした。");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!confirmUpdate(currentText, latestText))
+        {
+            return new UpdateResult(currentText, latestText, "declined", null);
         }
 
         var tempDirectory = Path.Combine(Path.GetTempPath(), "outlook-cli-update-" + Guid.NewGuid().ToString("N"));

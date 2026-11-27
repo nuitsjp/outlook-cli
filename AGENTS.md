@@ -19,4 +19,4 @@
 
 - ビルド、テスト、開発中の実行には `mise run build`、`mise run test`、`mise run run` を使う。リリースは `mise run release` で `vX.Y.Z` タグをプッシュし、GitHub Actions から GitHub Releases にインストーラーを発行する。
 - 配布には署名なしのユーザー単位の Inno Setup インストーラーを使う。インストーラーは `Path` を変更せず、`%LOCALAPPDATA%\Microsoft\WinGet\Links` に shim を置き、アンインストール時に削除する。
-- 自動更新は明示的な `update` で実行する。公開リポジトリの GitHub Releases を認証なしで参照し、正式版とインストール済みのバージョンを比較する。新版のインストーラーは GitHub が返す SHA-256 を照合してから、CLI と shim の終了後にサイレント実行する。CLI の通常起動時に更新確認や同意プロンプトを出さない。
+- 更新は明示的な `update` で実行する。公開リポジトリの GitHub Releases を認証なしで参照し、正式版とインストール済みのバージョンを比較する。新版があれば標準エラー出力に `[Y/n]` の確認を出し、同意後にインストーラーをダウンロードする。GitHub が返す SHA-256 を照合してから、CLI と shim の終了後にサイレント実行する。CLI の通常起動時に更新確認や同意プロンプトを出さない。
