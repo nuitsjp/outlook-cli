@@ -37,7 +37,7 @@ public sealed class CalendarCommandTests
             ? ["--ascii", "calendar", "list", "--from", "2026-11-01", "--to", "2026-12-01"]
             : ["calendar", "list", "--from", "2026-11-01", "--to", "2026-12-01"];
         var exitCode = OutlookCli.Program.Run(
-            args, UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, output, error);
+            args, UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, UnusedMailSender(), output, error);
 
         Assert.Equal(0, exitCode);
         Assert.Empty(error.ToString());
@@ -65,7 +65,7 @@ public sealed class CalendarCommandTests
 
         var exitCode = OutlookCli.Program.Run(
             ["calendar", "list", "--from", "2026-11-01", "--to", "2026-12-01"],
-            UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, output, error);
+            UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, UnusedMailSender(), output, error);
 
         Assert.Equal(0, exitCode);
         Assert.Empty(output.ToString());
@@ -86,7 +86,7 @@ public sealed class CalendarCommandTests
 
         var exitCode = OutlookCli.Program.Run(
             ["calendar", "list", "--from", from, "--to", to],
-            UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, output, error);
+            UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, UnusedMailSender(), output, error);
 
         Assert.Equal(1, exitCode);
         Assert.Empty(output.ToString());
@@ -103,7 +103,7 @@ public sealed class CalendarCommandTests
 
         var exitCode = OutlookCli.Program.Run(
             ["calendar", "list", "--to", "2026-12-01"],
-            UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, output, error);
+            UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, UnusedMailSender(), output, error);
 
         Assert.Equal(1, exitCode);
         Assert.Empty(output.ToString());
@@ -120,7 +120,7 @@ public sealed class CalendarCommandTests
 
         var exitCode = OutlookCli.Program.Run(
             ["calendar", "list", "--from", "2026-11-01"],
-            UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, output, error);
+            UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, UnusedMailSender(), output, error);
 
         Assert.Equal(1, exitCode);
         Assert.Empty(output.ToString());
@@ -158,7 +158,7 @@ public sealed class CalendarCommandTests
             ? ["--ascii", "calendar", "show", "--id", id]
             : ["calendar", "show", "--id", id];
         var exitCode = OutlookCli.Program.Run(
-            args, UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, output, error);
+            args, UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, UnusedMailSender(), output, error);
 
         Assert.Equal(0, exitCode);
         Assert.Empty(error.ToString());
@@ -199,7 +199,7 @@ public sealed class CalendarCommandTests
 
         var exitCode = OutlookCli.Program.Run(
             ["calendar", "show"],
-            UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, output, error);
+            UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, UnusedMailSender(), output, error);
 
         Assert.Equal(1, exitCode);
         Assert.Empty(output.ToString());
@@ -216,7 +216,7 @@ public sealed class CalendarCommandTests
 
         var exitCode = OutlookCli.Program.Run(
             ["calendar", "show", "--id", "   "],
-            UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, output, error);
+            UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, UnusedMailSender(), output, error);
 
         Assert.Equal(1, exitCode);
         Assert.Empty(output.ToString());
@@ -236,7 +236,7 @@ public sealed class CalendarCommandTests
 
         var exitCode = OutlookCli.Program.Run(
             ["calendar", "show", "--id", id],
-            UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, output, error);
+            UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, UnusedMailSender(), output, error);
 
         Assert.Equal(1, exitCode);
         Assert.Contains("80004005", error.ToString(), StringComparison.OrdinalIgnoreCase);
@@ -293,6 +293,9 @@ public sealed class CalendarCommandTests
     private static IMailWatcher UnusedWatcher() =>
         new UnusedWatcherStub();
 
+    private static IMailSender UnusedMailSender() =>
+        new UnusedMailSenderStub();
+
     private sealed class RecordingCalendarQuery(
         Func<(DateTime From, DateTime To), IEnumerable<CalendarSummary>> listHandler,
         Func<string, CalendarDetail>? getHandler = null) : ICalendarQuery
@@ -336,5 +339,11 @@ public sealed class CalendarCommandTests
             Action onReady,
             CancellationToken cancellationToken) =>
             throw new InvalidOperationException("Mail watch must not be called");
+    }
+
+    private sealed class UnusedMailSenderStub : IMailSender
+    {
+        public void Send(string to, string subject, string body) =>
+            throw new InvalidOperationException("Mail send must not be called");
     }
 }

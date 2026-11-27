@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.CommandLine.Help;
 using System.Text;
 using OutlookCli.Commands;
 using OutlookCli.Core.Calendar;
@@ -15,7 +16,7 @@ internal static class Program
         Console.OutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         return Run(
             args, new OutlookMailQuery(), new OutlookMailReadStateUpdater(), new OutlookMailWatcher(),
-            new OutlookCalendarQuery(), Console.Out, Console.Error);
+            new OutlookCalendarQuery(), new OutlookMailSender(), Console.Out, Console.Error);
     }
 
     internal static int Run(
@@ -24,6 +25,7 @@ internal static class Program
         IMailReadStateUpdater updater,
         IMailWatcher watcher,
         ICalendarQuery calendarQuery,
+        IMailSender sender,
         TextWriter output,
         TextWriter error)
     {
@@ -37,22 +39,27 @@ internal static class Program
 
         var json = new JsonOutput(output);
         var mail = new Command("mail", "メールを操作します。");
+        var help = (HelpAction)root.Options.OfType<HelpOption>().Single().Action!;
+        root.SetAction(help.Invoke);
+        mail.SetAction(help.Invoke);
         mail.Subcommands.Add(new MailListCommand(query, json, error).Create());
         mail.Subcommands.Add(new MailShowCommand(query, json, error).Create());
         mail.Subcommands.Add(new MailWatchCommand(watcher, json, error).Create());
         var readState = new MailReadStateCommand(updater, json, error);
         mail.Subcommands.Add(readState.Create(unread: false));
         mail.Subcommands.Add(readState.Create(unread: true));
+        mail.Subcommands.Add(new MailSendCommand(sender, json, error).Create());
         root.Subcommands.Add(mail);
 
         var calendar = new Command("calendar", "既定の予定表から予定を取得します。");
+        calendar.SetAction(help.Invoke);
         calendar.Subcommands.Add(new CalendarListCommand(calendarQuery, json, error).Create());
         calendar.Subcommands.Add(new CalendarShowCommand(calendarQuery, json, error).Create());
         root.Subcommands.Add(calendar);
 
         root.Subcommands.Add(new UpdateCommand(json, error).Create());
 
-        var parsed = root.Parse(args.Length == 0 ? ["-h"] : args);
+        var parsed = root.Parse(args);
         if (parsed.Errors.Count > 0)
         {
             foreach (var parseError in parsed.Errors)

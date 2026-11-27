@@ -24,6 +24,8 @@ outlook-cli update
 
 ## 使い方
 
+`outlook-cli`、`outlook-cli mail`、`outlook-cli calendar` をサブコマンドなしで実行すると、その階層の `-h` と同じヘルプを表示します。これらの実行では Outlook 操作を行いません。
+
 ```powershell
 outlook-cli mail list --unread
 ```
@@ -66,6 +68,14 @@ outlook-cli mail watch
 ```
 
 クラシック Outlook の受信イベントを待機し、新着メールごとに `mail list` と同じ形式の JSONL を標準出力に1行書きます。購読の開始・終了は標準エラー出力に表示されます。待機中は Outlook と接続を保持し、Ctrl+C で購読を解除して終了します。メールの既読状態は維持します。
+
+### メール送信
+
+```powershell
+outlook-cli mail send --to 'recipient@example.com' --subject '打ち合わせ' --body '明日の資料を共有します。'
+```
+
+`--to`、`--subject`、`--body` に宛先、件名、プレーンテキストの本文を指定します。クラシック Outlook の既定のアカウントから送信し、成功時は標準出力に `{"schemaVersion":1,"submitted":true}` を1行出力して終了コード `0` を返します。`--ascii` を指定した場合は既存の JSON 出力規則に従います。
 
 ### 予定表
 

@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 
 namespace OutlookCli.OutlookCom;
 
@@ -38,13 +37,10 @@ internal sealed class OutlookFolderConnection : IDisposable
 
     private void Connect(int defaultFolder)
     {
-        var applicationType = Type.GetTypeFromProgID("Outlook.Application")
-            ?? throw new InvalidOperationException("クラシック Outlook の COM 登録が見つかりません。");
-
         using var currentProcess = Process.GetCurrentProcess();
         var sessionId = currentProcess.SessionId;
         using var existingOutlook = FindOutlookProcess(sessionId);
-        application = Activator.CreateInstance(applicationType)!;
+        application = OutlookComObject.CreateApplication();
         if (existingOutlook is null)
         {
             startedOutlook = FindOutlookProcess(sessionId);
@@ -68,7 +64,7 @@ internal sealed class OutlookFolderConnection : IDisposable
         }
         catch
         {
-            Release(item);
+            OutlookComObject.Release(item);
             throw;
         }
     }
@@ -84,9 +80,9 @@ internal sealed class OutlookFolderConnection : IDisposable
     public void Dispose()
     {
         using var outlookToWaitFor = startedOutlook;
-        Release(folder);
-        Release(session);
-        Release(application);
+        OutlookComObject.Release(folder);
+        OutlookComObject.Release(session);
+        OutlookComObject.Release(application);
 
         // Outlook started by COM can exit after the last reference is released.
         // Quit would also close a window the user opened during the query.
@@ -118,11 +114,6 @@ internal sealed class OutlookFolderConnection : IDisposable
         }
     }
 
-    internal static void Release(object? instance)
-    {
-        if (instance is not null)
-        {
-            Marshal.ReleaseComObject(instance);
-        }
-    }
+    internal static void Release(object? instance) => OutlookComObject.Release(instance);
+
 }
