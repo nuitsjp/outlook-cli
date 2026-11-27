@@ -22,7 +22,7 @@ public sealed class OutlookMailReadStateUpdater : IMailReadStateUpdater
         }
         finally
         {
-            OutlookInbox.Release(item);
+            OutlookComObject.Release(item);
         }
     }
 }

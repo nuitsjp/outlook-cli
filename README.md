@@ -1,8 +1,10 @@
 # outlook-cli
 
-クラシック Outlook の既定の受信トレイにあるメールを取得し、既読・未読を変更できる Windows 用 CLI です。実行には、設定済みの Outlook プロファイルと .NET 10 ランタイムが必要です。
+クラシック Outlook でメールの取得、既読・未読の変更、送信ができる Windows 用 CLI です。実行には、設定済みの Outlook プロファイルと .NET 10 ランタイムが必要です。
 
 ## 使い方
+
+`outlook-cli` または `outlook-cli mail` をサブコマンドなしで実行すると、その階層の `-h` と同じヘルプを表示します。
 
 ```powershell
 outlook-cli mail list --unread
@@ -42,6 +44,12 @@ outlook-cli mail watch
 ```
 
 クラシック Outlook の受信イベントを待機し、新着メールごとに `mail list` と同じ形式の JSONL を標準出力に1行書きます。購読の開始・終了は標準エラー出力に表示されます。待機中は Outlook と接続を保持し、Ctrl+C で購読を解除して終了します。メールの既読状態は維持します。
+
+```powershell
+outlook-cli mail send --to 'recipient@example.com' --subject '打ち合わせ' --body '明日の資料を共有します。'
+```
+
+`--to` に宛先1件、`--subject` に件名、`--body` にプレーンテキストの本文を指定します。クラシック Outlook セッションの既定のアカウントを使います。Outlook への送信依頼が成功すると、標準出力に `{"schemaVersion":1,"submitted":true}` を1行出力し、終了コード `0` を返します。エラーは標準エラー出力に表示し、終了コード `1` を返します。
 
 ## 開発
 

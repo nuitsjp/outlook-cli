@@ -35,7 +35,7 @@ public sealed class OutlookMailWatcher : IMailWatcher
                 }
                 finally
                 {
-                    OutlookInbox.Release(item);
+                    OutlookComObject.Release(item);
                 }
             }
             catch (Exception exception)

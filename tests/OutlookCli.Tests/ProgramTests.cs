@@ -7,6 +7,81 @@ namespace OutlookCli.Tests;
 
 public sealed class ProgramTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Command_group_without_subcommand_matches_explicit_help(bool mailGroup)
+    {
+        string[] args = mailGroup ? ["mail"] : [];
+        var query = new RecordingMailQuery(_ => throw new InvalidOperationException("List must not be called"));
+        var output = new StringWriter();
+        var explicitHelp = new StringWriter();
+        var error = new StringWriter();
+
+        var exitCode = OutlookCli.Program.Run(
+            args, query, UnusedUpdater(), UnusedWatcher(), UnusedSender(), output, error);
+        var helpExitCode = OutlookCli.Program.Run(
+            [.. args, "-h"], query, UnusedUpdater(), UnusedWatcher(), UnusedSender(), explicitHelp, error);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(0, helpExitCode);
+        Assert.NotEmpty(explicitHelp.ToString());
+        Assert.Equal(explicitHelp.ToString(), output.ToString());
+        Assert.Empty(error.ToString());
+        Assert.False(query.WasCalled);
+    }
+
+    [Fact]
+    public void Send_passes_the_message_to_outlook_and_reports_submission()
+    {
+        const string to = "recipient@example.com";
+        const string subject = "日本語の件名";
+        const string body = "1行目\n2行目";
+        var query = new RecordingMailQuery(_ => Array.Empty<MailSummary>());
+        var sender = new RecordingMailSender((_, _, _) => { });
+        var output = new StringWriter();
+        var error = new StringWriter();
+
+        var exitCode = OutlookCli.Program.Run(
+            ["mail", "send", "--to", to, "--subject", subject, "--body", body],
+            query, UnusedUpdater(), UnusedWatcher(), sender, output, error);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal((to, subject, body), Assert.Single(sender.Messages));
+        Assert.Empty(error.ToString());
+        using var json = JsonDocument.Parse(Assert.Single(ReadLines(output.ToString())));
+        Assert.Equal(1, json.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.True(json.RootElement.GetProperty("submitted").GetBoolean());
+    }
+
+    [Theory]
+    [InlineData("--to")]
+    [InlineData("--subject")]
+    [InlineData("--body")]
+    public void Send_requires_all_message_options(string omittedOption)
+    {
+        var options = new Dictionary<string, string>
+        {
+            ["--to"] = "recipient@example.com",
+            ["--subject"] = "Subject",
+            ["--body"] = "Body",
+        };
+        options.Remove(omittedOption);
+        var query = new RecordingMailQuery(_ => Array.Empty<MailSummary>());
+        var sender = UnusedSender();
+        var output = new StringWriter();
+        var error = new StringWriter();
+
+        var exitCode = OutlookCli.Program.Run(
+            ["mail", "send", .. options.SelectMany(option => new[] { option.Key, option.Value })],
+            query, UnusedUpdater(), UnusedWatcher(), sender, output, error);
+
+        Assert.Equal(1, exitCode);
+        Assert.Empty(sender.Messages);
+        Assert.Empty(output.ToString());
+        Assert.Contains(omittedOption, error.ToString(), StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Unread_option_passes_true_to_query()
     {
@@ -17,7 +92,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "list", "--unread"], query, UnusedUpdater(), UnusedWatcher(), output, error);
+        var exitCode = OutlookCli.Program.Run(["mail", "list", "--unread"], query, UnusedUpdater(), UnusedWatcher(), UnusedSender(), output, error);
 
         Assert.Equal(0, exitCode);
         Assert.Equal([true], query.UnreadOnlyArguments);
@@ -34,7 +109,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "list"], query, UnusedUpdater(), UnusedWatcher(), output, error);
+        var exitCode = OutlookCli.Program.Run(["mail", "list"], query, UnusedUpdater(), UnusedWatcher(), UnusedSender(), output, error);
 
         Assert.Equal(0, exitCode);
         Assert.Equal([false], query.UnreadOnlyArguments);
@@ -56,7 +131,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "list"], query, UnusedUpdater(), UnusedWatcher(), output, error);
+        var exitCode = OutlookCli.Program.Run(["mail", "list"], query, UnusedUpdater(), UnusedWatcher(), UnusedSender(), output, error);
 
         Assert.Equal(0, exitCode);
         Assert.Empty(error.ToString());
@@ -83,7 +158,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "list"], query, UnusedUpdater(), UnusedWatcher(), output, error);
+        var exitCode = OutlookCli.Program.Run(["mail", "list"], query, UnusedUpdater(), UnusedWatcher(), UnusedSender(), output, error);
 
         Assert.Equal(0, exitCode);
         Assert.Empty(output.ToString());
@@ -109,7 +184,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "watch"], query, UnusedUpdater(), watcher, output, error);
+        var exitCode = OutlookCli.Program.Run(["mail", "watch"], query, UnusedUpdater(), watcher, UnusedSender(), output, error);
 
         Assert.Equal(0, exitCode);
         Assert.False(query.WasCalled);
@@ -150,7 +225,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "watch"], query, UnusedUpdater(), watcher, output, error);
+        var exitCode = OutlookCli.Program.Run(["mail", "watch"], query, UnusedUpdater(), watcher, UnusedSender(), output, error);
 
         Assert.Equal(0, exitCode);
         Assert.False(query.WasCalled);
@@ -168,7 +243,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "watch"], query, UnusedUpdater(), watcher, output, error);
+        var exitCode = OutlookCli.Program.Run(["mail", "watch"], query, UnusedUpdater(), watcher, UnusedSender(), output, error);
 
         Assert.Equal(1, exitCode);
         Assert.Contains("80004005", error.ToString(), StringComparison.OrdinalIgnoreCase);
@@ -184,7 +259,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "list"], query, UnusedUpdater(), UnusedWatcher(), output, error);
+        var exitCode = OutlookCli.Program.Run(["mail", "list"], query, UnusedUpdater(), UnusedWatcher(), UnusedSender(), output, error);
 
         Assert.Equal(1, exitCode);
         Assert.Contains("80004005", error.ToString(), StringComparison.OrdinalIgnoreCase);
@@ -199,7 +274,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "list", "--unread"], query, UnusedUpdater(), UnusedWatcher(), output, error);
+        var exitCode = OutlookCli.Program.Run(["mail", "list", "--unread"], query, UnusedUpdater(), UnusedWatcher(), UnusedSender(), output, error);
 
         Assert.Equal(1, exitCode);
         Assert.Contains("80004005", error.ToString(), StringComparison.OrdinalIgnoreCase);
@@ -231,7 +306,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "show", "--entry-id", entryId], query, UnusedUpdater(), UnusedWatcher(), output, error);
+        var exitCode = OutlookCli.Program.Run(["mail", "show", "--entry-id", entryId], query, UnusedUpdater(), UnusedWatcher(), UnusedSender(), output, error);
 
         Assert.Equal(0, exitCode);
         Assert.Empty(error.ToString());
@@ -258,7 +333,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "show"], query, UnusedUpdater(), UnusedWatcher(), output, error);
+        var exitCode = OutlookCli.Program.Run(["mail", "show"], query, UnusedUpdater(), UnusedWatcher(), UnusedSender(), output, error);
 
         Assert.Equal(1, exitCode);
         Assert.Empty(output.ToString());
@@ -273,7 +348,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "show", "--entry-id", "   "], query, UnusedUpdater(), UnusedWatcher(), output, error);
+        var exitCode = OutlookCli.Program.Run(["mail", "show", "--entry-id", "   "], query, UnusedUpdater(), UnusedWatcher(), UnusedSender(), output, error);
 
         Assert.Equal(1, exitCode);
         Assert.Empty(output.ToString());
@@ -291,7 +366,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "show", "--entry-id", entryId], query, UnusedUpdater(), UnusedWatcher(), output, error);
+        var exitCode = OutlookCli.Program.Run(["mail", "show", "--entry-id", entryId], query, UnusedUpdater(), UnusedWatcher(), UnusedSender(), output, error);
 
         Assert.Equal(1, exitCode);
         Assert.Contains("80004005", error.ToString(), StringComparison.OrdinalIgnoreCase);
@@ -317,7 +392,7 @@ public sealed class ProgramTests
         var error = new StringWriter();
 
         var exitCode = OutlookCli.Program.Run(
-            ["mail", commandName, "--entry-id", entryId], query, updater, UnusedWatcher(), output, error);
+            ["mail", commandName, "--entry-id", entryId], query, updater, UnusedWatcher(), UnusedSender(), output, error);
 
         Assert.Equal(0, exitCode);
         Assert.Empty(error.ToString());
@@ -347,7 +422,7 @@ public sealed class ProgramTests
         var error = new StringWriter();
 
         var exitCode = OutlookCli.Program.Run(
-            ["mail", commandName], query, updater, UnusedWatcher(), output, error);
+            ["mail", commandName], query, updater, UnusedWatcher(), UnusedSender(), output, error);
 
         Assert.Equal(1, exitCode);
         Assert.Empty(output.ToString());
@@ -367,7 +442,7 @@ public sealed class ProgramTests
         var error = new StringWriter();
 
         var exitCode = OutlookCli.Program.Run(
-            ["mail", commandName, "--entry-id", "   "], query, updater, UnusedWatcher(), output, error);
+            ["mail", commandName, "--entry-id", "   "], query, updater, UnusedWatcher(), UnusedSender(), output, error);
 
         Assert.Equal(1, exitCode);
         Assert.Empty(output.ToString());
@@ -388,7 +463,7 @@ public sealed class ProgramTests
         var error = new StringWriter();
 
         var exitCode = OutlookCli.Program.Run(
-            ["mail", commandName, "--entry-id", entryId], query, updater, UnusedWatcher(), output, error);
+            ["mail", commandName, "--entry-id", entryId], query, updater, UnusedWatcher(), UnusedSender(), output, error);
 
         Assert.Equal(1, exitCode);
         Assert.Contains("80004005", error.ToString(), StringComparison.OrdinalIgnoreCase);
@@ -404,7 +479,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "list", "--unknown"], query, UnusedUpdater(), UnusedWatcher(), output, error);
+        var exitCode = OutlookCli.Program.Run(["mail", "list", "--unknown"], query, UnusedUpdater(), UnusedWatcher(), UnusedSender(), output, error);
 
         Assert.Equal(1, exitCode);
         Assert.False(query.WasCalled);
@@ -430,6 +505,20 @@ public sealed class ProgramTests
 
     private static RecordingMailWatcher UnusedWatcher() =>
         new((_, _, _) => throw new InvalidOperationException("Watch must not be called"));
+
+    private static RecordingMailSender UnusedSender() =>
+        new((_, _, _) => throw new InvalidOperationException("Send must not be called"));
+
+    private sealed class RecordingMailSender(Action<string, string, string> sendHandler) : IMailSender
+    {
+        public List<(string To, string Subject, string Body)> Messages { get; } = [];
+
+        public void Send(string to, string subject, string body)
+        {
+            Messages.Add((to, subject, body));
+            sendHandler(to, subject, body);
+        }
+    }
 
     private sealed class RecordingMailQuery(
         Func<bool, IEnumerable<MailSummary>> listHandler,

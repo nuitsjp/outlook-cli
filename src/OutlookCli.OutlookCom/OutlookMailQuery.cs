@@ -35,7 +35,7 @@ public sealed class OutlookMailQuery : IMailQuery
                 }
                 finally
                 {
-                    OutlookInbox.Release(item);
+                    OutlookComObject.Release(item);
                 }
 
                 yield return summary;
@@ -43,8 +43,8 @@ public sealed class OutlookMailQuery : IMailQuery
         }
         finally
         {
-            OutlookInbox.Release(restrictedItems);
-            OutlookInbox.Release(items);
+            OutlookComObject.Release(restrictedItems);
+            OutlookComObject.Release(items);
         }
     }
 
@@ -64,7 +64,7 @@ public sealed class OutlookMailQuery : IMailQuery
         }
         finally
         {
-            OutlookInbox.Release(item);
+            OutlookComObject.Release(item);
         }
     }
 
