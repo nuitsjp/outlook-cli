@@ -11,7 +11,7 @@ public sealed class OutlookMailWatcher : IMailWatcher
 
     public void Watch(Action<MailSummary> onMail, Action onReady, CancellationToken cancellationToken)
     {
-        using var inbox = OutlookInbox.Open();
+        using var inbox = OutlookFolderConnection.Open();
         using var stopped = new ManualResetEvent(false);
         using var cancellation = cancellationToken.Register(() => stopped.Set());
         ExceptionDispatchInfo? failure = null;
@@ -28,14 +28,14 @@ public sealed class OutlookMailWatcher : IMailWatcher
                 var item = inbox.GetReceivedItem(entryId);
                 try
                 {
-                    if (item is not null && (int)((dynamic)item).Class == OutlookInbox.MailItemClass)
+                    if (item is not null && (int)((dynamic)item).Class == OutlookFolderConnection.MailItemClass)
                     {
                         onMail(OutlookMailQuery.ReadSummary(item));
                     }
                 }
                 finally
                 {
-                    OutlookInbox.Release(item);
+                    OutlookFolderConnection.Release(item);
                 }
             }
             catch (Exception exception)

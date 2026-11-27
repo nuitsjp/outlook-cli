@@ -6,7 +6,7 @@ public sealed class OutlookMailReadStateUpdater : IMailReadStateUpdater
 {
     public MailReadStateChange SetUnread(string entryId, bool unread)
     {
-        using var inbox = OutlookInbox.Open();
+        using var inbox = OutlookFolderConnection.Open();
         var item = inbox.GetMail(entryId);
         try
         {
@@ -22,7 +22,7 @@ public sealed class OutlookMailReadStateUpdater : IMailReadStateUpdater
         }
         finally
         {
-            OutlookInbox.Release(item);
+            OutlookFolderConnection.Release(item);
         }
     }
 }

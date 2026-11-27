@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using OutlookCli.Core.Calendar;
 using OutlookCli.Core.Mail;
 using Xunit;
 
@@ -7,6 +8,26 @@ namespace OutlookCli.Tests;
 
 public sealed class ProgramTests
 {
+    [Fact]
+    public void No_arguments_writes_the_same_help_as_help_option()
+    {
+        var query = new RecordingMailQuery(_ => Array.Empty<MailSummary>());
+        var output = new StringWriter();
+        var helpOutput = new StringWriter();
+        var error = new StringWriter();
+
+        var exitCode = Run([], query, UnusedUpdater(), UnusedWatcher(), output, error);
+        var helpExitCode = Run(["-h"], query, UnusedUpdater(), UnusedWatcher(), helpOutput, error);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(exitCode, helpExitCode);
+        Assert.Equal(helpOutput.ToString(), output.ToString());
+        Assert.Contains("mail", output.ToString(), StringComparison.Ordinal);
+        Assert.Contains("--ascii", output.ToString(), StringComparison.Ordinal);
+        Assert.Empty(error.ToString());
+        Assert.False(query.WasCalled);
+    }
+
     [Fact]
     public void Unread_option_passes_true_to_query()
     {
@@ -17,7 +38,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "list", "--unread"], query, UnusedUpdater(), UnusedWatcher(), output, error);
+        var exitCode = Run(["mail", "list", "--unread"], query, UnusedUpdater(), UnusedWatcher(), output, error);
 
         Assert.Equal(0, exitCode);
         Assert.Equal([true], query.UnreadOnlyArguments);
@@ -34,15 +55,17 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "list"], query, UnusedUpdater(), UnusedWatcher(), output, error);
+        var exitCode = Run(["mail", "list"], query, UnusedUpdater(), UnusedWatcher(), output, error);
 
         Assert.Equal(0, exitCode);
         Assert.Equal([false], query.UnreadOnlyArguments);
         Assert.Empty(error.ToString());
     }
 
-    [Fact]
-    public void Serializes_each_message_as_one_json_line_with_required_fields()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Serializes_each_message_as_one_json_line_with_required_fields(bool asciiOnly)
     {
         var receivedAt = new DateTimeOffset(2026, 11, 25, 9, 30, 0, TimeSpan.FromHours(9));
         const string entryId = "entry-1";
@@ -56,13 +79,15 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "list"], query, UnusedUpdater(), UnusedWatcher(), output, error);
+        string[] args = asciiOnly ? ["--ascii", "mail", "list"] : ["mail", "list"];
+        var exitCode = Run(args, query, UnusedUpdater(), UnusedWatcher(), output, error);
 
         Assert.Equal(0, exitCode);
         Assert.Empty(error.ToString());
 
         var lines = ReadLines(output.ToString());
         Assert.Equal(2, lines.Count);
+        AssertJsonEncoding(lines[0], senderName, asciiOnly);
 
         using var json = JsonDocument.Parse(lines[0]);
         var root = json.RootElement;
@@ -83,7 +108,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "list"], query, UnusedUpdater(), UnusedWatcher(), output, error);
+        var exitCode = Run(["mail", "list"], query, UnusedUpdater(), UnusedWatcher(), output, error);
 
         Assert.Equal(0, exitCode);
         Assert.Empty(output.ToString());
@@ -91,11 +116,13 @@ public sealed class ProgramTests
         Assert.Equal([false], query.UnreadOnlyArguments);
     }
 
-    [Fact]
-    public void Watch_writes_ready_status_to_stderr_and_serializes_notifications_in_order()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Watch_writes_ready_status_to_stderr_and_serializes_notifications_in_order(bool asciiOnly)
     {
         var firstReceivedAt = new DateTimeOffset(2026, 11, 25, 9, 30, 0, TimeSpan.FromHours(9));
-        var first = new MailSummary("日本語の件名\n改行付き", "山田 太郎", firstReceivedAt, "entry-1");
+        var first = new MailSummary("日本語の件名📬\n改行付き", "山田 太郎", firstReceivedAt, "entry-1");
         var secondReceivedAt = firstReceivedAt.AddMinutes(-5);
         var second = new MailSummary("second subject", "Second sender", secondReceivedAt, "entry-2");
         var query = new RecordingMailQuery(_ => Array.Empty<MailSummary>());
@@ -109,7 +136,8 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "watch"], query, UnusedUpdater(), watcher, output, error);
+        string[] args = asciiOnly ? ["mail", "watch", "--ascii"] : ["mail", "watch"];
+        var exitCode = Run(args, query, UnusedUpdater(), watcher, output, error);
 
         Assert.Equal(0, exitCode);
         Assert.False(query.WasCalled);
@@ -118,8 +146,7 @@ public sealed class ProgramTests
 
         var lines = ReadLines(output.ToString());
         Assert.Equal(2, lines.Count);
-        Assert.All(lines, line => Assert.All(line, character => Assert.True(character <= '\u007F')));
-        Assert.Contains("\\u", lines[0], StringComparison.Ordinal);
+        AssertJsonEncoding(lines[0], "日本語の件名📬", asciiOnly);
 
         using var firstJson = JsonDocument.Parse(lines[0]);
         var firstRoot = firstJson.RootElement;
@@ -150,7 +177,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "watch"], query, UnusedUpdater(), watcher, output, error);
+        var exitCode = Run(["mail", "watch"], query, UnusedUpdater(), watcher, output, error);
 
         Assert.Equal(0, exitCode);
         Assert.False(query.WasCalled);
@@ -168,7 +195,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "watch"], query, UnusedUpdater(), watcher, output, error);
+        var exitCode = Run(["mail", "watch"], query, UnusedUpdater(), watcher, output, error);
 
         Assert.Equal(1, exitCode);
         Assert.Contains("80004005", error.ToString(), StringComparison.OrdinalIgnoreCase);
@@ -184,7 +211,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "list"], query, UnusedUpdater(), UnusedWatcher(), output, error);
+        var exitCode = Run(["mail", "list"], query, UnusedUpdater(), UnusedWatcher(), output, error);
 
         Assert.Equal(1, exitCode);
         Assert.Contains("80004005", error.ToString(), StringComparison.OrdinalIgnoreCase);
@@ -199,7 +226,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "list", "--unread"], query, UnusedUpdater(), UnusedWatcher(), output, error);
+        var exitCode = Run(["mail", "list", "--unread"], query, UnusedUpdater(), UnusedWatcher(), output, error);
 
         Assert.Equal(1, exitCode);
         Assert.Contains("80004005", error.ToString(), StringComparison.OrdinalIgnoreCase);
@@ -213,8 +240,10 @@ public sealed class ProgramTests
         }
     }
 
-    [Fact]
-    public void Show_calls_get_once_and_serializes_one_json_object()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Show_calls_get_once_and_serializes_one_json_object(bool asciiOnly)
     {
         const string entryId = "entry-42";
         const string subject = "Subject";
@@ -223,7 +252,7 @@ public sealed class ProgramTests
         const string to = "to@example.com";
         const string cc = "cc@example.com";
         const string bcc = "bcc@example.com";
-        const string body = "First line\nSecond line";
+        const string body = "本文\n引用符\"とバックスラッシュ\\u672C";
         var summary = new MailSummary(subject, senderName, receivedAt, entryId);
         var query = new RecordingMailQuery(
             _ => Array.Empty<MailSummary>(),
@@ -231,13 +260,16 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "show", "--entry-id", entryId], query, UnusedUpdater(), UnusedWatcher(), output, error);
+        string[] args = asciiOnly ? ["mail", "--ascii", "show", "--entry-id", entryId] : ["mail", "show", "--entry-id", entryId];
+        var exitCode = Run(args, query, UnusedUpdater(), UnusedWatcher(), output, error);
 
         Assert.Equal(0, exitCode);
         Assert.Empty(error.ToString());
         Assert.Equal([entryId], query.GetEntryIdArguments);
 
-        using var json = JsonDocument.Parse(output.ToString());
+        var line = Assert.Single(ReadLines(output.ToString()));
+        AssertJsonEncoding(line, "本文", asciiOnly);
+        using var json = JsonDocument.Parse(line);
         var root = json.RootElement;
         Assert.Equal(JsonValueKind.Object, root.ValueKind);
         Assert.Equal(1, root.GetProperty("schemaVersion").GetInt32());
@@ -258,7 +290,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "show"], query, UnusedUpdater(), UnusedWatcher(), output, error);
+        var exitCode = Run(["mail", "show"], query, UnusedUpdater(), UnusedWatcher(), output, error);
 
         Assert.Equal(1, exitCode);
         Assert.Empty(output.ToString());
@@ -273,7 +305,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "show", "--entry-id", "   "], query, UnusedUpdater(), UnusedWatcher(), output, error);
+        var exitCode = Run(["mail", "show", "--entry-id", "   "], query, UnusedUpdater(), UnusedWatcher(), output, error);
 
         Assert.Equal(1, exitCode);
         Assert.Empty(output.ToString());
@@ -291,7 +323,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "show", "--entry-id", entryId], query, UnusedUpdater(), UnusedWatcher(), output, error);
+        var exitCode = Run(["mail", "show", "--entry-id", entryId], query, UnusedUpdater(), UnusedWatcher(), output, error);
 
         Assert.Equal(1, exitCode);
         Assert.Contains("80004005", error.ToString(), StringComparison.OrdinalIgnoreCase);
@@ -300,24 +332,26 @@ public sealed class ProgramTests
     }
 
     [Theory]
-    [InlineData("mark-read", false, true)]
-    [InlineData("mark-read", false, false)]
-    [InlineData("mark-unread", true, true)]
-    [InlineData("mark-unread", true, false)]
+    [InlineData("mark-read", false, true, false)]
+    [InlineData("mark-read", false, false, true)]
+    [InlineData("mark-unread", true, true, false)]
+    [InlineData("mark-unread", true, false, true)]
     public void Mark_state_calls_set_unread_once_and_serializes_result(
         string commandName,
         bool unread,
-        bool changed)
+        bool changed,
+        bool asciiOnly)
     {
         const string entryId = "entry-42";
+        const string returnedEntryId = "保存済みID";
         var query = new RecordingMailQuery(_ => Array.Empty<MailSummary>());
         var updater = new RecordingMailReadStateUpdater(
-            (id, _) => new MailReadStateChange(id, changed));
+            (_, _) => new MailReadStateChange(returnedEntryId, changed));
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(
-            ["mail", commandName, "--entry-id", entryId], query, updater, UnusedWatcher(), output, error);
+        string[] args = asciiOnly ? ["mail", commandName, "--entry-id", entryId, "--ascii"] : ["mail", commandName, "--entry-id", entryId];
+        var exitCode = Run(args, query, updater, UnusedWatcher(), output, error);
 
         Assert.Equal(0, exitCode);
         Assert.Empty(error.ToString());
@@ -325,12 +359,13 @@ public sealed class ProgramTests
         Assert.Equal([entryId], updater.EntryIdArguments);
         Assert.Equal([unread], updater.UnreadArguments);
 
-        var lines = ReadLines(output.ToString());
-        using var json = JsonDocument.Parse(Assert.Single(lines));
+        var line = Assert.Single(ReadLines(output.ToString()));
+        AssertJsonEncoding(line, returnedEntryId, asciiOnly);
+        using var json = JsonDocument.Parse(line);
         var root = json.RootElement;
         Assert.Equal(JsonValueKind.Object, root.ValueKind);
         Assert.Equal(1, root.GetProperty("schemaVersion").GetInt32());
-        Assert.Equal(entryId, root.GetProperty("entryId").GetString());
+        Assert.Equal(returnedEntryId, root.GetProperty("entryId").GetString());
         Assert.Equal(unread, root.GetProperty("unread").GetBoolean());
         Assert.Equal(changed, root.GetProperty("changed").GetBoolean());
     }
@@ -346,7 +381,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(
+        var exitCode = Run(
             ["mail", commandName], query, updater, UnusedWatcher(), output, error);
 
         Assert.Equal(1, exitCode);
@@ -366,7 +401,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(
+        var exitCode = Run(
             ["mail", commandName, "--entry-id", "   "], query, updater, UnusedWatcher(), output, error);
 
         Assert.Equal(1, exitCode);
@@ -387,7 +422,7 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(
+        var exitCode = Run(
             ["mail", commandName, "--entry-id", entryId], query, updater, UnusedWatcher(), output, error);
 
         Assert.Equal(1, exitCode);
@@ -404,12 +439,34 @@ public sealed class ProgramTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(["mail", "list", "--unknown"], query, UnusedUpdater(), UnusedWatcher(), output, error);
+        var exitCode = Run(["mail", "list", "--unknown"], query, UnusedUpdater(), UnusedWatcher(), output, error);
 
         Assert.Equal(1, exitCode);
         Assert.False(query.WasCalled);
         Assert.NotEmpty(error.ToString());
         Assert.Empty(output.ToString());
+    }
+
+    private static int Run(
+        string[] args,
+        IMailQuery query,
+        IMailReadStateUpdater updater,
+        IMailWatcher watcher,
+        TextWriter output,
+        TextWriter error) =>
+        OutlookCli.Program.Run(args, query, updater, watcher, new UnusedCalendarQuery(), output, error);
+
+    private static void AssertJsonEncoding(string line, string unicodeText, bool asciiOnly)
+    {
+        if (asciiOnly)
+        {
+            Assert.All(line, character => Assert.True(character <= '\u007F'));
+            Assert.Contains("\\u", line, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Contains(unicodeText, line, StringComparison.Ordinal);
+        }
     }
 
     private static List<string> ReadLines(string text)
@@ -430,6 +487,14 @@ public sealed class ProgramTests
 
     private static RecordingMailWatcher UnusedWatcher() =>
         new((_, _, _) => throw new InvalidOperationException("Watch must not be called"));
+
+    private sealed class UnusedCalendarQuery : ICalendarQuery
+    {
+        public IEnumerable<CalendarSummary> List(DateTime from, DateTime to) =>
+            throw new NotSupportedException();
+
+        public CalendarDetail Get(string id) => throw new NotSupportedException();
+    }
 
     private sealed class RecordingMailQuery(
         Func<bool, IEnumerable<MailSummary>> listHandler,

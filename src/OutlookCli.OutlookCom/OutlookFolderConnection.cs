@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 
 namespace OutlookCli.OutlookCom;
 
-internal sealed class OutlookInbox : IDisposable
+internal sealed class OutlookFolderConnection : IDisposable
 {
     private const int InboxFolder = 6; // OlDefaultFolders.olFolderInbox
     internal const int MailItemClass = 43; // OlObjectClass.olMail
@@ -14,29 +14,29 @@ internal sealed class OutlookInbox : IDisposable
     private object? session;
     private object? folder;
 
-    private OutlookInbox()
+    private OutlookFolderConnection()
     {
     }
 
     public object Application => application!;
     public object Folder => folder!;
 
-    public static OutlookInbox Open()
+    public static OutlookFolderConnection Open(int defaultFolder = InboxFolder)
     {
-        var inbox = new OutlookInbox();
+        var connection = new OutlookFolderConnection();
         try
         {
-            inbox.Connect();
-            return inbox;
+            connection.Connect(defaultFolder);
+            return connection;
         }
         catch
         {
-            inbox.Dispose();
+            connection.Dispose();
             throw;
         }
     }
 
-    private void Connect()
+    private void Connect(int defaultFolder)
     {
         var applicationType = Type.GetTypeFromProgID("Outlook.Application")
             ?? throw new InvalidOperationException("クラシック Outlook の COM 登録が見つかりません。");
@@ -51,13 +51,12 @@ internal sealed class OutlookInbox : IDisposable
         }
 
         session = ((dynamic)application).GetNamespace("MAPI");
-        folder = ((dynamic)session!).GetDefaultFolder(InboxFolder);
+        folder = ((dynamic)session!).GetDefaultFolder(defaultFolder);
     }
 
     public object GetMail(string entryId)
     {
-        var storeId = (string)((dynamic)Folder).StoreID;
-        object? item = ((dynamic)session!).GetItemFromID(entryId, storeId);
+        var item = GetItem(entryId);
         try
         {
             if (item is null || (int)((dynamic)item).Class != MailItemClass)
@@ -75,6 +74,12 @@ internal sealed class OutlookInbox : IDisposable
     }
 
     public object? GetReceivedItem(string entryId) => ((dynamic)session!).GetItemFromID(entryId);
+
+    public object? GetItem(string entryId)
+    {
+        var storeId = (string)((dynamic)Folder).StoreID;
+        return ((dynamic)session!).GetItemFromID(entryId, storeId);
+    }
 
     public void Dispose()
     {

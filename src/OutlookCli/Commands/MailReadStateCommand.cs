@@ -1,11 +1,10 @@
 using System.CommandLine;
 using System.Runtime.InteropServices;
-using System.Text.Json;
 using OutlookCli.Core.Mail;
 
 namespace OutlookCli.Commands;
 
-internal sealed class MailReadStateCommand(IMailReadStateUpdater updater, TextWriter output, TextWriter error)
+internal sealed class MailReadStateCommand(IMailReadStateUpdater updater, JsonOutput json, TextWriter error)
 {
     public Command Create(bool unread)
     {
@@ -33,13 +32,13 @@ internal sealed class MailReadStateCommand(IMailReadStateUpdater updater, TextWr
         try
         {
             var change = updater.SetUnread(entryId, unread);
-            output.WriteLine(JsonSerializer.Serialize(new
+            json.WriteLine(new
             {
                 schemaVersion = 1,
                 change.EntryId,
                 unread,
                 change.Changed,
-            }, MailJson.Options));
+            });
             return 0;
         }
         catch (COMException exception)

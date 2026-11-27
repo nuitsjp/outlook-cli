@@ -4,7 +4,7 @@ using OutlookCli.Core.Mail;
 
 namespace OutlookCli.Commands;
 
-internal sealed class MailListCommand(IMailQuery query, TextWriter output, TextWriter error)
+internal sealed class MailListCommand(IMailQuery query, JsonOutput json, TextWriter error)
 {
     public Command Create()
     {
@@ -21,7 +21,7 @@ internal sealed class MailListCommand(IMailQuery query, TextWriter output, TextW
         {
             foreach (var mail in query.List(unreadOnly))
             {
-                MailJson.WriteSummary(output, mail);
+                MailJson.WriteSummary(json, mail);
             }
 
             return 0;

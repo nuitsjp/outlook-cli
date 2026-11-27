@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using Microsoft.Win32;
 
 namespace OutlookCli.Shim;
@@ -23,6 +24,12 @@ internal static class Program
             {
                 UseShellExecute = false,
             };
+
+            using var shimProcess = Process.GetCurrentProcess();
+            startInfo.EnvironmentVariables["OUTLOOK_CLI_SHIM_PID"] =
+                shimProcess.Id.ToString(CultureInfo.InvariantCulture);
+            startInfo.EnvironmentVariables["OUTLOOK_CLI_SHIM_START_TICKS"] = shimProcess.StartTime
+                .ToUniversalTime().Ticks.ToString(CultureInfo.InvariantCulture);
 
             // Keep the shim in the same console process group so Ctrl+C is sent to
             // the target as well. The handler prevents the shim from exiting first.

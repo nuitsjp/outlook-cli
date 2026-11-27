@@ -6,6 +6,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="System.Net.Http" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="System.CommandLine" Version="2.0.5" />
     <PackageReference Include="System.Text.Json" Version="10.0.12" />
     <ProjectReference Include="../OutlookCli.Core/OutlookCli.Core.csproj" />

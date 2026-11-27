@@ -6,7 +6,7 @@ public sealed class OutlookMailQuery : IMailQuery
 {
     public IEnumerable<MailSummary> List(bool unreadOnly)
     {
-        using var inbox = OutlookInbox.Open();
+        using var inbox = OutlookFolderConnection.Open();
         object? items = null;
         object? restrictedItems = null;
 
@@ -26,7 +26,7 @@ public sealed class OutlookMailQuery : IMailQuery
                 MailSummary summary;
                 try
                 {
-                    if ((int)((dynamic)item).Class != OutlookInbox.MailItemClass)
+                    if ((int)((dynamic)item).Class != OutlookFolderConnection.MailItemClass)
                     {
                         continue;
                     }
@@ -35,7 +35,7 @@ public sealed class OutlookMailQuery : IMailQuery
                 }
                 finally
                 {
-                    OutlookInbox.Release(item);
+                    OutlookFolderConnection.Release(item);
                 }
 
                 yield return summary;
@@ -43,14 +43,14 @@ public sealed class OutlookMailQuery : IMailQuery
         }
         finally
         {
-            OutlookInbox.Release(restrictedItems);
-            OutlookInbox.Release(items);
+            OutlookFolderConnection.Release(restrictedItems);
+            OutlookFolderConnection.Release(items);
         }
     }
 
     public MailDetail Get(string entryId)
     {
-        using var inbox = OutlookInbox.Open();
+        using var inbox = OutlookFolderConnection.Open();
         var item = inbox.GetMail(entryId);
         try
         {
@@ -64,7 +64,7 @@ public sealed class OutlookMailQuery : IMailQuery
         }
         finally
         {
-            OutlookInbox.Release(item);
+            OutlookFolderConnection.Release(item);
         }
     }
 

@@ -8,6 +8,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\OutlookCli\OutlookCli.csproj" />
   </ItemGroup>
 
