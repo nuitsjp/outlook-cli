@@ -1,5 +1,4 @@
 using System.CommandLine;
-using System.Runtime.InteropServices;
 using OutlookCli.Core.Mail;
 
 namespace OutlookCli.Commands;
@@ -39,7 +38,7 @@ internal sealed class MailReplyCommand(IMailOperations operations, JsonOutput js
             return 1;
         }
 
-        try
+        return CommandExecution.Run(error, "返信の下書き保存", () =>
         {
             var result = operations.Reply(entryId!, body!);
             json.WriteLine(new
@@ -50,17 +49,6 @@ internal sealed class MailReplyCommand(IMailOperations operations, JsonOutput js
                 result.Subject,
                 saved = true,
             });
-            return 0;
-        }
-        catch (COMException exception)
-        {
-            error.WriteLine($"返信の下書き保存に失敗しました (HRESULT 0x{exception.HResult:X8})。{exception.Message}");
-            return 1;
-        }
-        catch (InvalidOperationException exception)
-        {
-            error.WriteLine(exception.Message);
-            return 1;
-        }
+        });
     }
 }

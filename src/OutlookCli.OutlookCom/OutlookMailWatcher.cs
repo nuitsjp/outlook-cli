@@ -9,9 +9,9 @@ public sealed class OutlookMailWatcher : IMailWatcher
     private static readonly Guid ApplicationEvents = new("0006302C-0000-0000-C000-000000000046");
     private const int NewMailEx = 0xFAB5; // ApplicationEvents_11.NewMailEx
 
-    public void Watch(Action<MailSummary> onMail, Action onReady, CancellationToken cancellationToken)
+    public void Watch(Action<MailSummary> onMail, Action onReady, CancellationToken cancellationToken) => ComCleanup.Run(cleanup =>
     {
-        using var inbox = OutlookFolderConnection.Open();
+        using var inbox = OutlookFolderConnection.Open(cleanup);
         using var stopped = new ManualResetEvent(false);
         using var cancellation = cancellationToken.Register(() => stopped.Set());
         ExceptionDispatchInfo? failure = null;
@@ -25,18 +25,21 @@ public sealed class OutlookMailWatcher : IMailWatcher
 
             try
             {
-                var item = inbox.GetReceivedItem(entryId);
-                try
+                ComCleanup.Run(notification =>
                 {
-                    if (item is not null && (int)((dynamic)item).Class == OutlookFolderConnection.MailItemClass)
+                    var item = inbox.GetReceivedItem(entryId);
+                    try
                     {
-                        onMail(OutlookMailQuery.ReadSummary(item));
+                        if (item is not null && (int)((dynamic)item).Class == OutlookFolderConnection.MailItemClass)
+                        {
+                            onMail(OutlookMailQuery.ReadSummary(item));
+                        }
                     }
-                }
-                finally
-                {
-                    OutlookFolderConnection.Release(item);
-                }
+                    finally
+                    {
+                        notification.Release(item);
+                    }
+                });
             }
             catch (Exception exception)
             {
@@ -58,9 +61,9 @@ public sealed class OutlookMailWatcher : IMailWatcher
         }
         finally
         {
-            ComEventsHelper.Remove(inbox.Application, ApplicationEvents, NewMailEx, handler);
+            cleanup.Attempt(() => ComEventsHelper.Remove(inbox.Application, ApplicationEvents, NewMailEx, handler));
         }
-    }
+    });
 
     [DllImport("ole32.dll")]
     private static extern int CoWaitForMultipleHandles(

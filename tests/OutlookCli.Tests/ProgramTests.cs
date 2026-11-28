@@ -529,7 +529,7 @@ public sealed class ProgramTests
         IMailSender sender,
         TextWriter output,
         TextWriter error) =>
-        OutlookCli.Program.Run(
+        CliTestSupport.Run(
             args, query, updater, watcher, new UnusedCalendarQuery(), sender, output, error);
 
     private static List<string> ReadLines(string text)

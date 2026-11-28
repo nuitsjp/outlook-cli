@@ -10,19 +10,20 @@ public sealed class OutlookCalendarQuery : ICalendarQuery, ICalendarOperations
     private const int AppointmentItemClass = 26; // OlObjectClass.olAppointment
     private const int AppointmentItemType = 1; // OlItemType.olAppointmentItem
     private const int Busy = 2; // OlBusyStatus.olBusy
-    private const int MinutesPerSlot = 30;
     private const int NotRecurring = 0; // OlRecurrenceState.olApptNotRecurring
     private const int Master = 1; // OlRecurrenceState.olApptMaster
     private const int Occurrence = 2; // OlRecurrenceState.olApptOccurrence
     private const int Exception = 3; // OlRecurrenceState.olApptException
-    private const string IdPrefix = "oc1_";
     private const string ExceptionReplaceTimeSchema =
         "http://schemas.microsoft.com/mapi/id/{00062002-0000-0000-C000-000000000046}/0x82280040";
 
-    public IEnumerable<CalendarSummary> List(DateTime from, DateTime to, string? owner = null)
+    public IEnumerable<CalendarSummary> List(DateTime from, DateTime to, string? owner = null) =>
+        ComCleanup.Enumerate(cleanup => ListCore(cleanup, from, to, owner));
+
+    private static IEnumerable<CalendarSummary> ListCore(ComCleanup cleanup, DateTime from, DateTime to, string? owner)
     {
-        using var calendar = OutlookFolderConnection.Open(CalendarFolder, owner);
-        foreach (var (item, _, _, state) in ReadAppointments(calendar.Folder, from, to))
+        using var calendar = OutlookFolderConnection.Open(cleanup, CalendarFolder, owner);
+        foreach (var (item, _, _, state) in ReadAppointments(calendar, from, to))
         {
             var appointment = (dynamic)item;
             var entryId = (string)appointment.EntryID;
@@ -31,21 +32,21 @@ public sealed class OutlookCalendarQuery : ICalendarQuery, ICalendarOperations
             {
                 NotRecurring => (DateTime?)null,
                 Occurrence => ReadUtc((DateTime)appointment.StartUTC),
-                Exception => ReadExceptionOriginalUtc(item),
+                Exception => ReadExceptionOriginalUtc(cleanup, item),
                 _ => throw new InvalidOperationException("Outlook の予定の繰り返し状態を判別できませんでした。"),
             };
-            yield return ReadSummary(item, EncodeId(entryId, originalUtc));
+            yield return ReadSummary(item, CalendarLogic.EncodeId(entryId, originalUtc));
         }
     }
 
     private static IEnumerable<(object Item, DateTime Start, DateTime End, int State)> ReadAppointments(
-        object folder, DateTime from, DateTime to)
+        OutlookFolderConnection calendar, DateTime from, DateTime to)
     {
         object? items = null;
         object? restricted = null;
         try
         {
-            items = ((dynamic)folder).Items;
+            items = ((dynamic)calendar.Folder).Items;
             var appointments = (dynamic)items!;
             // Outlook expands recurring items when sorting precedes IncludeRecurrences and Restrict.
             appointments.Sort("[Start]", false);
@@ -73,10 +74,7 @@ public sealed class OutlookCalendarQuery : ICalendarQuery, ICalendarOperations
 
                     var start = (DateTime)appointment.Start;
                     var end = (DateTime)appointment.End;
-                    var overlaps = start == end
-                        ? start >= from && start < to
-                        : start < to && end > from;
-                    if (!overlaps)
+                    if (!CalendarLogic.Overlaps(start, end, from, to))
                     {
                         continue;
                     }
@@ -85,21 +83,21 @@ public sealed class OutlookCalendarQuery : ICalendarQuery, ICalendarOperations
                 }
                 finally
                 {
-                    OutlookFolderConnection.Release(item);
+                    calendar.Cleanup.Release(item);
                 }
             }
         }
         finally
         {
-            OutlookFolderConnection.Release(restricted);
-            OutlookFolderConnection.Release(items);
+            calendar.Cleanup.Release(restricted);
+            calendar.Cleanup.Release(items);
         }
     }
 
-    public CalendarDetail Get(string id, string? owner = null)
+    public CalendarDetail Get(string id, string? owner = null) => ComCleanup.Run(cleanup =>
     {
-        var (entryId, originalUtc) = DecodeId(id);
-        using var calendar = OutlookFolderConnection.Open(CalendarFolder, owner);
+        var (entryId, originalUtc) = CalendarLogic.DecodeId(id);
+        using var calendar = OutlookFolderConnection.Open(cleanup, CalendarFolder, owner);
         object? item = null;
         object? pattern = null;
         object? occurrence = null;
@@ -111,11 +109,11 @@ public sealed class OutlookCalendarQuery : ICalendarQuery, ICalendarOperations
                 throw new InvalidOperationException("指定した ID に対応する予定が見つかりません。");
             }
 
-            EnsureInCalendar(item, calendar.Folder);
+            EnsureInCalendar(cleanup, item, calendar.Folder);
             var state = (int)((dynamic)item).RecurrenceState;
             if (originalUtc is null && state == NotRecurring)
             {
-                return ReadDetail(item, id);
+                return ReadDetail(cleanup, item, id);
             }
 
             if (originalUtc is not DateTime original || state != Master)
@@ -124,7 +122,7 @@ public sealed class OutlookCalendarQuery : ICalendarQuery, ICalendarOperations
             }
 
             pattern = ((dynamic)item).GetRecurrencePattern();
-            occurrence = FindException(pattern!, original);
+            occurrence = FindException(cleanup, pattern!, original);
             // A moved occurrence must be read through Exceptions. GetOccurrence is for unchanged instances.
             occurrence ??= ((dynamic)pattern!).GetOccurrence(original.ToLocalTime());
             if (occurrence is null)
@@ -132,19 +130,19 @@ public sealed class OutlookCalendarQuery : ICalendarQuery, ICalendarOperations
                 throw new InvalidOperationException("指定した ID に対応する予定の回が見つかりません。");
             }
 
-            return ReadDetail(occurrence, id);
+            return ReadDetail(cleanup, occurrence, id);
         }
         finally
         {
-            OutlookFolderConnection.Release(occurrence);
-            OutlookFolderConnection.Release(pattern);
-            OutlookFolderConnection.Release(item);
+            cleanup.Release(occurrence);
+            cleanup.Release(pattern);
+            cleanup.Release(item);
         }
-    }
+    });
 
-    public CalendarSummary Create(string subject, DateTimeOffset start, DateTimeOffset end)
+    public CalendarSummary Create(string subject, DateTimeOffset start, DateTimeOffset end) => ComCleanup.Run(cleanup =>
     {
-        using var calendar = OutlookFolderConnection.Open(CalendarFolder);
+        using var calendar = OutlookFolderConnection.Open(cleanup, CalendarFolder);
         object? item = null;
         try
         {
@@ -155,26 +153,29 @@ public sealed class OutlookCalendarQuery : ICalendarQuery, ICalendarOperations
             appointment.EndUTC = end.UtcDateTime;
             appointment.BusyStatus = Busy;
             appointment.Save();
-            return ReadSummary(item!, EncodeId((string)appointment.EntryID, null));
+            return ReadSummary(item!, CalendarLogic.EncodeId((string)appointment.EntryID, null));
         }
         finally
         {
-            OutlookFolderConnection.Release(item);
+            cleanup.Release(item);
         }
-    }
+    });
 
-    public IEnumerable<CalendarAvailability> GetAvailability(IReadOnlyList<string> attendees, DateTime from, DateTime to)
+    public IEnumerable<CalendarAvailability> GetAvailability(IReadOnlyList<string> attendees, DateTime from, DateTime to) =>
+        ComCleanup.Enumerate(cleanup => GetAvailabilityCore(cleanup, attendees, from, to));
+
+    private static IEnumerable<CalendarAvailability> GetAvailabilityCore(ComCleanup cleanup, IReadOnlyList<string> attendees, DateTime from, DateTime to)
     {
-        using var calendar = OutlookFolderConnection.Open(CalendarFolder);
+        using var calendar = OutlookFolderConnection.Open(cleanup, CalendarFolder);
         var ownerAddress = ReadCalendarOwnerAddress(calendar);
-        var slotCount = (int)((to - from).TotalMinutes / MinutesPerSlot);
+        var slotCount = (int)((to - from).TotalMinutes / CalendarLogic.MinutesPerSlot);
         string? ownerSlots = null;
         foreach (var attendee in attendees)
         {
             if (string.Equals(attendee, ownerAddress, StringComparison.OrdinalIgnoreCase))
             {
-                ownerSlots ??= ReadLocalSlots(calendar.Folder, from, to, slotCount);
-                yield return new CalendarAvailability(attendee, from, to, MinutesPerSlot, ownerSlots);
+                ownerSlots ??= ReadLocalSlots(calendar, from, to);
+                yield return new CalendarAvailability(attendee, from, to, CalendarLogic.MinutesPerSlot, ownerSlots);
                 continue;
             }
 
@@ -182,7 +183,7 @@ public sealed class OutlookCalendarQuery : ICalendarQuery, ICalendarOperations
             string? slots;
             try
             {
-                slots = (string?)((dynamic)recipient).FreeBusy(from, MinutesPerSlot, true);
+                slots = (string?)((dynamic)recipient).FreeBusy(from, CalendarLogic.MinutesPerSlot, true);
             }
             catch (COMException exception)
             {
@@ -191,7 +192,7 @@ public sealed class OutlookCalendarQuery : ICalendarQuery, ICalendarOperations
             }
             finally
             {
-                OutlookFolderConnection.Release(recipient);
+                cleanup.Release(recipient);
             }
 
             if (slots is null || slots.Length < slotCount)
@@ -199,7 +200,7 @@ public sealed class OutlookCalendarQuery : ICalendarQuery, ICalendarOperations
                 throw new InvalidOperationException($"指定期間の空き時間情報を取得できませんでした。{attendee}");
             }
 
-            yield return new CalendarAvailability(attendee, from, to, MinutesPerSlot, slots.Substring(0, slotCount));
+            yield return new CalendarAvailability(attendee, from, to, CalendarLogic.MinutesPerSlot, slots.Substring(0, slotCount));
         }
     }
 
@@ -228,8 +229,8 @@ public sealed class OutlookCalendarQuery : ICalendarQuery, ICalendarOperations
                 }
                 finally
                 {
-                    OutlookFolderConnection.Release(store);
-                    OutlookFolderConnection.Release(account);
+                    calendar.Cleanup.Release(store);
+                    calendar.Cleanup.Release(account);
                 }
             }
 
@@ -237,43 +238,21 @@ public sealed class OutlookCalendarQuery : ICalendarQuery, ICalendarOperations
         }
         finally
         {
-            OutlookFolderConnection.Release(accounts);
+            calendar.Cleanup.Release(accounts);
         }
     }
 
-    private static string ReadLocalSlots(object folder, DateTime from, DateTime to, int slotCount)
+    private static string ReadLocalSlots(OutlookFolderConnection calendar, DateTime from, DateTime to)
     {
-        var slots = new int[slotCount];
-        foreach (var (item, start, end, _) in ReadAppointments(folder, from, to))
-        {
-            // Give working elsewhere lower priority than tentative or busy.
-            var priority = (int)((dynamic)item).BusyStatus switch
-            {
-                0 => 0, // olFree
-                1 => 2, // olTentative
-                2 => 3, // olBusy
-                3 => 4, // olOutOfOffice
-                4 => 1, // olWorkingElsewhere
-                _ => throw new InvalidOperationException("Outlook の予定の公開方法を判別できませんでした。"),
-            };
-            if (start >= end || priority == 0)
-            {
-                continue;
-            }
-
-            var first = Math.Max(0, (int)Math.Floor((start - from).TotalMinutes / MinutesPerSlot));
-            var last = Math.Min(slotCount, (int)Math.Ceiling((end - from).TotalMinutes / MinutesPerSlot));
-            for (var index = first; index < last; index++)
-            {
-                slots[index] = Math.Max(slots[index], priority);
-            }
-        }
-
-        const string codesInPriorityOrder = "05123";
-        return new string(Array.ConvertAll(slots, priority => codesInPriorityOrder[priority]));
+        var appointments = ReadAppointments(calendar, from, to)
+            .Select(appointment => new CalendarBusyInterval(
+                appointment.Start,
+                appointment.End,
+                (int)((dynamic)appointment.Item).BusyStatus));
+        return CalendarLogic.CalculateSlots(appointments, from, to);
     }
 
-    private static object? FindException(object pattern, DateTime originalUtc)
+    internal static object? FindException(ComCleanup cleanup, object pattern, DateTime originalUtc)
     {
         object? exceptions = null;
         try
@@ -294,7 +273,7 @@ public sealed class OutlookCalendarQuery : ICalendarQuery, ICalendarOperations
                     }
 
                     appointment = ((dynamic)exception!).AppointmentItem;
-                    if (ReadExceptionOriginalUtc(appointment!) == originalUtc)
+                    if (ReadExceptionOriginalUtc(cleanup, appointment!) == originalUtc)
                     {
                         var match = appointment;
                         appointment = null;
@@ -303,8 +282,8 @@ public sealed class OutlookCalendarQuery : ICalendarQuery, ICalendarOperations
                 }
                 finally
                 {
-                    OutlookFolderConnection.Release(appointment);
-                    OutlookFolderConnection.Release(exception);
+                    cleanup.Release(appointment);
+                    cleanup.Release(exception);
                 }
             }
 
@@ -312,11 +291,11 @@ public sealed class OutlookCalendarQuery : ICalendarQuery, ICalendarOperations
         }
         finally
         {
-            OutlookFolderConnection.Release(exceptions);
+            cleanup.Release(exceptions);
         }
     }
 
-    private static DateTime ReadExceptionOriginalUtc(object appointment)
+    private static DateTime ReadExceptionOriginalUtc(ComCleanup cleanup, object appointment)
     {
         object? accessor = null;
         try
@@ -326,11 +305,11 @@ public sealed class OutlookCalendarQuery : ICalendarQuery, ICalendarOperations
         }
         finally
         {
-            OutlookFolderConnection.Release(accessor);
+            cleanup.Release(accessor);
         }
     }
 
-    private static void EnsureInCalendar(object item, object folder)
+    private static void EnsureInCalendar(ComCleanup cleanup, object item, object folder)
     {
         object? parent = null;
         try
@@ -346,7 +325,7 @@ public sealed class OutlookCalendarQuery : ICalendarQuery, ICalendarOperations
         }
         finally
         {
-            OutlookFolderConnection.Release(parent);
+            cleanup.Release(parent);
         }
     }
 
@@ -362,17 +341,17 @@ public sealed class OutlookCalendarQuery : ICalendarQuery, ICalendarOperations
             (string?)appointment.Location ?? string.Empty);
     }
 
-    private static CalendarDetail ReadDetail(object item, string id)
+    private static CalendarDetail ReadDetail(ComCleanup cleanup, object item, string id)
     {
         var appointment = (dynamic)item;
         return new CalendarDetail(
             ReadSummary(item, id),
             (string?)appointment.Organizer ?? string.Empty,
-            ReadAttendees(item),
+            ReadAttendees(cleanup, item),
             (string?)appointment.Body ?? string.Empty);
     }
 
-    private static IReadOnlyList<CalendarAttendee> ReadAttendees(object item)
+    private static IReadOnlyList<CalendarAttendee> ReadAttendees(ComCleanup cleanup, object item)
     {
         var attendees = new List<CalendarAttendee>();
         object? recipients = null;
@@ -402,13 +381,13 @@ public sealed class OutlookCalendarQuery : ICalendarQuery, ICalendarOperations
                 }
                 finally
                 {
-                    OutlookFolderConnection.Release(recipient);
+                    cleanup.Release(recipient);
                 }
             }
         }
         finally
         {
-            OutlookFolderConnection.Release(recipients);
+            cleanup.Release(recipients);
         }
 
         return attendees;
@@ -416,38 +395,4 @@ public sealed class OutlookCalendarQuery : ICalendarQuery, ICalendarOperations
 
     private static DateTime ReadUtc(DateTime value) => DateTime.SpecifyKind(value, DateTimeKind.Utc);
 
-    private static string EncodeId(string entryId, DateTime? originalUtc) =>
-        IdPrefix + entryId + (originalUtc is DateTime original
-            ? "." + original.Ticks.ToString(CultureInfo.InvariantCulture)
-            : string.Empty);
-
-    private static (string EntryId, DateTime? OriginalUtc) DecodeId(string id)
-    {
-        const string invalidId = "予定の ID が不正です。一覧で取得した ID を指定してください。";
-        if (!id.StartsWith(IdPrefix, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(invalidId);
-        }
-
-        var parts = id.Substring(IdPrefix.Length).Split('.');
-        var entryId = parts[0];
-        if (entryId.Length == 0 || !entryId.All(Uri.IsHexDigit))
-        {
-            throw new InvalidOperationException(invalidId);
-        }
-
-        if (parts.Length == 1)
-        {
-            return (entryId, null);
-        }
-
-        if (parts.Length != 2
-            || !long.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var ticks)
-            || ticks > DateTime.MaxValue.Ticks)
-        {
-            throw new InvalidOperationException(invalidId);
-        }
-
-        return (entryId, new DateTime(ticks, DateTimeKind.Utc));
-    }
 }

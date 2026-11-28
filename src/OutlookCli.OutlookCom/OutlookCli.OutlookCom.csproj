@@ -5,6 +5,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="OutlookCli.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../OutlookCli.Core/OutlookCli.Core.csproj" />
   </ItemGroup>
 </Project>

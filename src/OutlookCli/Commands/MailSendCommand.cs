@@ -1,6 +1,6 @@
 using System.CommandLine;
-using System.Runtime.InteropServices;
 using OutlookCli.Core.Mail;
+using OutlookCli.OutlookCom;
 
 namespace OutlookCli.Commands;
 
@@ -28,21 +28,18 @@ internal sealed class MailSendCommand(IMailSender sender, JsonOutput json, TextW
             return 1;
         }
 
-        try
+        return CommandExecution.Run(error, "Outlook への送信依頼", () =>
         {
-            sender.Send(to, subject, body);
+            try
+            {
+                sender.Send(to, subject, body);
+            }
+            catch (OutlookComCleanupException exception) when (exception.MailSubmitted && exception.PrimaryException is null)
+            {
+                CommandExecution.ReportCleanupFailures(error, exception);
+            }
+
             json.WriteLine(new { schemaVersion = 1, submitted = true });
-            return 0;
-        }
-        catch (COMException exception)
-        {
-            error.WriteLine($"Outlook への送信依頼に失敗しました (HRESULT 0x{exception.HResult:X8})。{exception.Message}");
-            return 1;
-        }
-        catch (InvalidOperationException exception)
-        {
-            error.WriteLine(exception.Message);
-            return 1;
-        }
+        });
     }
 }

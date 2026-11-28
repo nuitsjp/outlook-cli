@@ -31,7 +31,7 @@ public sealed class CalendarCommandTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(
+        var exitCode = CliTestSupport.Run(
             ["calendar", "list", "--from", "2026-11-01", "--to", "2026-12-01"],
             UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, UnusedMailSender(), output, error);
 
@@ -57,7 +57,7 @@ public sealed class CalendarCommandTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(
+        var exitCode = CliTestSupport.Run(
             ["calendar", "list", "--from", "2026-11-01", "--to", "2026-12-01"],
             UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, UnusedMailSender(), output, error);
 
@@ -78,7 +78,7 @@ public sealed class CalendarCommandTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(
+        var exitCode = CliTestSupport.Run(
             ["calendar", "list", "--from", from, "--to", to],
             UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, UnusedMailSender(), output, error);
 
@@ -95,7 +95,7 @@ public sealed class CalendarCommandTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(
+        var exitCode = CliTestSupport.Run(
             ["calendar", "list", "--to", "2026-12-01"],
             UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, UnusedMailSender(), output, error);
 
@@ -112,7 +112,7 @@ public sealed class CalendarCommandTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(
+        var exitCode = CliTestSupport.Run(
             ["calendar", "list", "--from", "2026-11-01"],
             UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, UnusedMailSender(), output, error);
 
@@ -146,7 +146,7 @@ public sealed class CalendarCommandTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(
+        var exitCode = CliTestSupport.Run(
             ["calendar", "show", "--id", id],
             UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, UnusedMailSender(), output, error);
 
@@ -186,7 +186,7 @@ public sealed class CalendarCommandTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(
+        var exitCode = CliTestSupport.Run(
             ["calendar", "show"],
             UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, UnusedMailSender(), output, error);
 
@@ -203,7 +203,7 @@ public sealed class CalendarCommandTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(
+        var exitCode = CliTestSupport.Run(
             ["calendar", "show", "--id", "   "],
             UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, UnusedMailSender(), output, error);
 
@@ -223,7 +223,7 @@ public sealed class CalendarCommandTests
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var exitCode = OutlookCli.Program.Run(
+        var exitCode = CliTestSupport.Run(
             ["calendar", "show", "--id", id],
             UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, UnusedMailSender(), output, error);
 
@@ -300,10 +300,10 @@ public sealed class CalendarCommandTests
         using var output = new StringWriter();
         using var error = new StringWriter();
         var owner = "owner@example.com";
-        var listExit = OutlookCli.Program.Run(
+        var listExit = CliTestSupport.Run(
             ["calendar", "list", "--from", "2026-12-01", "--to", "2026-12-02", "--owner", owner],
             UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, UnusedMailSender(), output, error);
-        var showExit = OutlookCli.Program.Run(
+        var showExit = CliTestSupport.Run(
             ["calendar", "show", "--id", "shared-id", "--owner", owner],
             UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, UnusedMailSender(), output, error);
 
@@ -314,7 +314,7 @@ public sealed class CalendarCommandTests
     }
 
     private static int RunNewCommand(string[] args, ICalendarOperations operations, TextWriter output, TextWriter error) =>
-        OutlookCli.Program.Run(args, UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(),
+        CliTestSupport.Run(args, UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(),
             new RecordingCalendarQuery(_ => []), UnusedMailSender(), output, error, calendarOperations: operations);
 
     private static void AssertSummaryJson(string line, CalendarSummary expected)

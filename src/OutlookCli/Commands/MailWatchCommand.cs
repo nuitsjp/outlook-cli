@@ -1,5 +1,4 @@
 using System.CommandLine;
-using System.Runtime.InteropServices;
 using OutlookCli.Core.Mail;
 
 namespace OutlookCli.Commands;
@@ -25,26 +24,18 @@ internal sealed class MailWatchCommand(IMailWatcher watcher, JsonOutput json, Te
         Console.CancelKeyPress += Cancel;
         try
         {
-            watcher.Watch(
-                mail =>
-                {
-                    MailJson.WriteSummary(json, mail);
-                    json.Flush();
-                },
-                () => error.WriteLine("Outlook の受信イベントを購読しました。終了するには Ctrl+C を押してください。"),
-                stopping.Token);
-            error.WriteLine("Outlook の受信イベントの購読を解除しました。");
-            return 0;
-        }
-        catch (COMException exception)
-        {
-            error.WriteLine($"Outlook の受信監視に失敗しました (HRESULT 0x{exception.HResult:X8})。{exception.Message}");
-            return 1;
-        }
-        catch (InvalidOperationException exception)
-        {
-            error.WriteLine(exception.Message);
-            return 1;
+            return CommandExecution.Run(error, "Outlook の受信監視", () =>
+            {
+                watcher.Watch(
+                    mail =>
+                    {
+                        json.WriteLine(new MailSummaryJson(mail));
+                        json.Flush();
+                    },
+                    () => error.WriteLine("Outlook の受信イベントを購読しました。終了するには Ctrl+C を押してください。"),
+                    stopping.Token);
+                error.WriteLine("Outlook の受信イベントの購読を解除しました。");
+            });
         }
         finally
         {

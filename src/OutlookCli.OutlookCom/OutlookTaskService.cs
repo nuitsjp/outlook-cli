@@ -8,9 +8,12 @@ public sealed class OutlookTaskService : ITaskService
     private const int TaskItemType = 3; // OlItemType.olTaskItem
     private const int TaskItemClass = 48; // OlObjectClass.olTask
 
-    public IEnumerable<TaskSummary> List()
+    public IEnumerable<TaskSummary> List() =>
+        ComCleanup.Enumerate(ListCore);
+
+    private static IEnumerable<TaskSummary> ListCore(ComCleanup cleanup)
     {
-        using var tasks = OutlookFolderConnection.Open(TasksFolder);
+        using var tasks = OutlookFolderConnection.Open(cleanup, TasksFolder);
         object? items = null;
         object? restrictedItems = null;
 
@@ -35,7 +38,7 @@ public sealed class OutlookTaskService : ITaskService
                 }
                 finally
                 {
-                    OutlookFolderConnection.Release(item);
+                    cleanup.Release(item);
                 }
 
                 yield return summary;
@@ -43,14 +46,14 @@ public sealed class OutlookTaskService : ITaskService
         }
         finally
         {
-            OutlookFolderConnection.Release(restrictedItems);
-            OutlookFolderConnection.Release(items);
+            cleanup.Release(restrictedItems);
+            cleanup.Release(items);
         }
     }
 
-    public TaskSummary Add(string subject, DateTime? due)
+    public TaskSummary Add(string subject, DateTime? due) => ComCleanup.Run(cleanup =>
     {
-        using var tasks = OutlookFolderConnection.Open(TasksFolder);
+        using var tasks = OutlookFolderConnection.Open(cleanup, TasksFolder);
         object? item = null;
 
         try
@@ -68,13 +71,13 @@ public sealed class OutlookTaskService : ITaskService
         }
         finally
         {
-            OutlookFolderConnection.Release(item);
+            cleanup.Release(item);
         }
-    }
+    });
 
-    public TaskChange Complete(string entryId)
+    public TaskChange Complete(string entryId) => ComCleanup.Run(cleanup =>
     {
-        using var tasks = OutlookFolderConnection.Open(TasksFolder);
+        using var tasks = OutlookFolderConnection.Open(cleanup, TasksFolder);
         var item = tasks.GetItem(entryId);
         object? parent = null;
         try
@@ -106,10 +109,10 @@ public sealed class OutlookTaskService : ITaskService
         }
         finally
         {
-            OutlookFolderConnection.Release(parent);
-            OutlookFolderConnection.Release(item);
+            cleanup.Release(parent);
+            cleanup.Release(item);
         }
-    }
+    });
 
     private static bool IsTask(object? item) =>
         item is not null && (int)((dynamic)item).Class == TaskItemClass;

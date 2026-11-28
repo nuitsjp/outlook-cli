@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using System.CommandLine;
 using OutlookCli.Core.Mail;
 
@@ -22,32 +21,15 @@ internal sealed class MailFolderCommand(IMailOperations operations, JsonOutput j
 
     private int ExecuteList()
     {
-        try
-        {
-            foreach (var folder in operations.ListFolders())
+        return CommandExecution.RunList(error, "メール フォルダー一覧の取得", operations.ListFolders,
+            folder => json.WriteLine(new
             {
-                json.WriteLine(new
-                {
-                    schemaVersion = 1,
-                    folder.FolderId,
-                    folder.DisplayName,
-                    folder.ParentFolderId,
-                    folder.Path,
-                    folder.StoreId,
-                });
-            }
-
-            return 0;
-        }
-        catch (COMException exception)
-        {
-            error.WriteLine($"メール フォルダー一覧の取得に失敗しました (HRESULT 0x{exception.HResult:X8})。{exception.Message}");
-            return 1;
-        }
-        catch (InvalidOperationException exception)
-        {
-            error.WriteLine(exception.Message);
-            return 1;
-        }
+                schemaVersion = 1,
+                folder.FolderId,
+                folder.DisplayName,
+                folder.ParentFolderId,
+                folder.Path,
+                folder.StoreId,
+            }));
     }
 }

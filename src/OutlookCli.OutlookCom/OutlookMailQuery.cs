@@ -7,9 +7,12 @@ public sealed class OutlookMailQuery : IMailQuery, IMailOperations
 {
     private const int MailItemType = 0; // OlItemType.olMailItem
 
-    public IEnumerable<MailSummary> List(MailListFilter filter)
+    public IEnumerable<MailSummary> List(MailListFilter filter) =>
+        ComCleanup.Enumerate(cleanup => ListCore(cleanup, filter));
+
+    private static IEnumerable<MailSummary> ListCore(ComCleanup cleanup, MailListFilter filter)
     {
-        using var connection = OutlookFolderConnection.Open();
+        using var connection = OutlookFolderConnection.Open(cleanup);
         object? selectedFolder = null;
         object? items = null;
         object? restrictedItems = null;
@@ -53,7 +56,7 @@ public sealed class OutlookMailQuery : IMailQuery, IMailOperations
                 }
                 finally
                 {
-                    OutlookFolderConnection.Release(item);
+                    cleanup.Release(item);
                 }
 
                 if (filter.Subject is not null
@@ -72,18 +75,18 @@ public sealed class OutlookMailQuery : IMailQuery, IMailOperations
         }
         finally
         {
-            OutlookFolderConnection.Release(restrictedItems);
-            OutlookFolderConnection.Release(items);
+            cleanup.Release(restrictedItems);
+            cleanup.Release(items);
             if (ownsSelectedFolder)
             {
-                OutlookFolderConnection.Release(selectedFolder);
+                cleanup.Release(selectedFolder);
             }
         }
     }
 
-    public MailDetail Get(string entryId)
+    public MailDetail Get(string entryId) => ComCleanup.Run(cleanup =>
     {
-        using var inbox = OutlookFolderConnection.Open();
+        using var inbox = OutlookFolderConnection.Open(cleanup);
         var item = inbox.GetMail(entryId);
         try
         {
@@ -97,34 +100,40 @@ public sealed class OutlookMailQuery : IMailQuery, IMailOperations
         }
         finally
         {
-            OutlookFolderConnection.Release(item);
+            cleanup.Release(item);
         }
-    }
+    });
 
-    public IEnumerable<MailFolderSummary> ListFolders()
+    public IEnumerable<MailFolderSummary> ListFolders() =>
+        ComCleanup.Enumerate(ListFoldersCore);
+
+    private static IEnumerable<MailFolderSummary> ListFoldersCore(ComCleanup cleanup)
     {
-        using var connection = OutlookFolderConnection.Open();
+        using var connection = OutlookFolderConnection.Open(cleanup);
         object? store = null;
         object? root = null;
         try
         {
             store = ((dynamic)connection.Folder).Store;
             root = ((dynamic)store!).GetRootFolder();
-            foreach (var folder in ReadFolders(root!, null, string.Empty))
+            foreach (var folder in ReadFolders(cleanup, root!, null, string.Empty))
             {
                 yield return folder;
             }
         }
         finally
         {
-            OutlookFolderConnection.Release(root);
-            OutlookFolderConnection.Release(store);
+            cleanup.Release(root);
+            cleanup.Release(store);
         }
     }
 
-    public IEnumerable<MailAttachmentSummary> ListAttachments(string entryId)
+    public IEnumerable<MailAttachmentSummary> ListAttachments(string entryId) =>
+        ComCleanup.Enumerate(cleanup => ListAttachmentsCore(cleanup, entryId));
+
+    private static IEnumerable<MailAttachmentSummary> ListAttachmentsCore(ComCleanup cleanup, string entryId)
     {
-        using var connection = OutlookFolderConnection.Open();
+        using var connection = OutlookFolderConnection.Open(cleanup);
         var item = connection.GetMail(entryId);
         object? attachments = null;
         try
@@ -147,18 +156,18 @@ public sealed class OutlookMailQuery : IMailQuery, IMailOperations
                 }
                 finally
                 {
-                    OutlookFolderConnection.Release(attachment);
+                    cleanup.Release(attachment);
                 }
             }
         }
         finally
         {
-            OutlookFolderConnection.Release(attachments);
-            OutlookFolderConnection.Release(item);
+            cleanup.Release(attachments);
+            cleanup.Release(item);
         }
     }
 
-    public MailAttachmentSaveResult SaveAttachment(string entryId, string attachmentId, string path)
+    public MailAttachmentSaveResult SaveAttachment(string entryId, string attachmentId, string path) => ComCleanup.Run(cleanup =>
     {
         if (string.IsNullOrWhiteSpace(path))
         {
@@ -177,7 +186,7 @@ public sealed class OutlookMailQuery : IMailQuery, IMailOperations
             throw new InvalidOperationException($"保存先ファイルが既に存在します。上書きしません: {fullPath}");
         }
 
-        using var connection = OutlookFolderConnection.Open();
+        using var connection = OutlookFolderConnection.Open(cleanup);
         var item = connection.GetMail(entryId);
         object? attachments = null;
         object? attachment = null;
@@ -185,41 +194,8 @@ public sealed class OutlookMailQuery : IMailQuery, IMailOperations
         {
             attachments = ((dynamic)item).Attachments;
             attachment = ((dynamic)attachments!).Item(index);
-            var directory = Path.GetDirectoryName(fullPath) ?? Directory.GetCurrentDirectory();
-            string temporaryPath;
-            do
-            {
-                temporaryPath = Path.Combine(directory, Path.GetRandomFileName());
-            }
-            while (File.Exists(temporaryPath));
-
-            try
-            {
-                // Reserve the temporary name before handing it to Outlook. File.Move
-                // does not replace an existing destination on .NET Framework.
-                using (File.Create(temporaryPath))
-                {
-                }
-
-                ((dynamic)attachment!).SaveAsFile(temporaryPath);
-                try
-                {
-                    File.Move(temporaryPath, fullPath);
-                }
-                catch (IOException exception)
-                {
-                    throw new InvalidOperationException(
-                        $"保存先ファイルが既に存在するか、保存できません。上書きしません: {fullPath}",
-                        exception);
-                }
-            }
-            finally
-            {
-                if (File.Exists(temporaryPath))
-                {
-                    File.Delete(temporaryPath);
-                }
-            }
+            AttachmentFileSaver.Save(fullPath, temporaryPath =>
+                ((dynamic)attachment!).SaveAsFile(temporaryPath));
 
             return new MailAttachmentSaveResult(
                 (string)((dynamic)item).EntryID,
@@ -228,20 +204,20 @@ public sealed class OutlookMailQuery : IMailQuery, IMailOperations
         }
         finally
         {
-            OutlookFolderConnection.Release(attachment);
-            OutlookFolderConnection.Release(attachments);
-            OutlookFolderConnection.Release(item);
+            cleanup.Release(attachment);
+            cleanup.Release(attachments);
+            cleanup.Release(item);
         }
-    }
+    });
 
-    public MailMoveResult Move(string entryId, string folderId)
+    public MailMoveResult Move(string entryId, string folderId) => ComCleanup.Run(cleanup =>
     {
         if (string.IsNullOrWhiteSpace(folderId))
         {
             throw new InvalidOperationException("移動先フォルダー ID を指定してください。");
         }
 
-        using var connection = OutlookFolderConnection.Open();
+        using var connection = OutlookFolderConnection.Open(cleanup);
         var item = connection.GetMail(entryId);
         object? destination = null;
         object? parent = null;
@@ -264,21 +240,21 @@ public sealed class OutlookMailQuery : IMailQuery, IMailOperations
         }
         finally
         {
-            OutlookFolderConnection.Release(moved);
-            OutlookFolderConnection.Release(parent);
-            OutlookFolderConnection.Release(destination);
-            OutlookFolderConnection.Release(item);
+            cleanup.Release(moved);
+            cleanup.Release(parent);
+            cleanup.Release(destination);
+            cleanup.Release(item);
         }
-    }
+    });
 
-    public MailReplyResult Reply(string entryId, string body)
+    public MailReplyResult Reply(string entryId, string body) => ComCleanup.Run(cleanup =>
     {
         if (string.IsNullOrWhiteSpace(body))
         {
             throw new InvalidOperationException("返信本文を指定してください。");
         }
 
-        using var connection = OutlookFolderConnection.Open();
+        using var connection = OutlookFolderConnection.Open(cleanup);
         var item = connection.GetMail(entryId);
         object? reply = null;
         try
@@ -298,10 +274,10 @@ public sealed class OutlookMailQuery : IMailQuery, IMailOperations
         }
         finally
         {
-            OutlookFolderConnection.Release(reply);
-            OutlookFolderConnection.Release(item);
+            cleanup.Release(reply);
+            cleanup.Release(item);
         }
-    }
+    });
 
     internal static MailSummary ReadSummary(object item)
     {
@@ -341,7 +317,7 @@ public sealed class OutlookMailQuery : IMailQuery, IMailOperations
         catch
         {
             ownsFolder = false;
-            OutlookFolderConnection.Release(folder);
+            connection.Cleanup.Release(folder);
             throw;
         }
     }
@@ -355,6 +331,7 @@ public sealed class OutlookMailQuery : IMailQuery, IMailOperations
     }
 
     private static IEnumerable<MailFolderSummary> ReadFolders(
+        ComCleanup cleanup,
         object folder,
         string? parentFolderId,
         string parentPath)
@@ -388,20 +365,20 @@ public sealed class OutlookMailQuery : IMailQuery, IMailOperations
                 try
                 {
                     child = collection.Item(index);
-                    foreach (var result in ReadFolders(child!, folderId, path))
+                    foreach (var result in ReadFolders(cleanup, child!, folderId, path))
                     {
                         yield return result;
                     }
                 }
                 finally
                 {
-                    OutlookFolderConnection.Release(child);
+                    cleanup.Release(child);
                 }
             }
         }
         finally
         {
-            OutlookFolderConnection.Release(children);
+            cleanup.Release(children);
         }
     }
 

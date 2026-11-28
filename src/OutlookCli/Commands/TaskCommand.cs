@@ -1,6 +1,5 @@
 using System.CommandLine;
 using System.Globalization;
-using System.Runtime.InteropServices;
 using OutlookCli.Core.Tasks;
 
 namespace OutlookCli.Commands;
@@ -57,25 +56,8 @@ internal sealed class TaskCommand(ITaskService service, JsonOutput json, TextWri
 
     private int ExecuteList()
     {
-        try
-        {
-            foreach (var task in service.List())
-            {
-                TaskJson.WriteSummary(json, task);
-            }
-
-            return 0;
-        }
-        catch (COMException exception)
-        {
-            error.WriteLine($"タスク一覧の取得に失敗しました (HRESULT 0x{exception.HResult:X8})。{exception.Message}");
-            return 1;
-        }
-        catch (InvalidOperationException exception)
-        {
-            error.WriteLine(exception.Message);
-            return 1;
-        }
+        return CommandExecution.RunList(error, "タスク一覧の取得", service.List,
+            task => TaskJson.WriteSummary(json, task));
     }
 
     private int ExecuteAdd(string subject, string? due)
@@ -103,21 +85,8 @@ internal sealed class TaskCommand(ITaskService service, JsonOutput json, TextWri
             dueDate = parsedDue;
         }
 
-        try
-        {
-            TaskJson.WriteSummary(json, service.Add(subject, dueDate));
-            return 0;
-        }
-        catch (COMException exception)
-        {
-            error.WriteLine($"タスクの追加に失敗しました (HRESULT 0x{exception.HResult:X8})。{exception.Message}");
-            return 1;
-        }
-        catch (InvalidOperationException exception)
-        {
-            error.WriteLine(exception.Message);
-            return 1;
-        }
+        return CommandExecution.Run(error, "タスクの追加", () =>
+            TaskJson.WriteSummary(json, service.Add(subject, dueDate)));
     }
 
     private int ExecuteComplete(string? entryId)
@@ -128,7 +97,7 @@ internal sealed class TaskCommand(ITaskService service, JsonOutput json, TextWri
             return 1;
         }
 
-        try
+        return CommandExecution.Run(error, "タスクの完了", () =>
         {
             var change = service.Complete(entryId!);
             json.WriteLine(new
@@ -137,17 +106,6 @@ internal sealed class TaskCommand(ITaskService service, JsonOutput json, TextWri
                 change.EntryId,
                 change.Changed,
             });
-            return 0;
-        }
-        catch (COMException exception)
-        {
-            error.WriteLine($"タスクの完了に失敗しました (HRESULT 0x{exception.HResult:X8})。{exception.Message}");
-            return 1;
-        }
-        catch (InvalidOperationException exception)
-        {
-            error.WriteLine(exception.Message);
-            return 1;
-        }
+        });
     }
 }

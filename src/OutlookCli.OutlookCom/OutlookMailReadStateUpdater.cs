@@ -4,9 +4,9 @@ namespace OutlookCli.OutlookCom;
 
 public sealed class OutlookMailReadStateUpdater : IMailReadStateUpdater
 {
-    public MailReadStateChange SetUnread(string entryId, bool unread)
+    public MailReadStateChange SetUnread(string entryId, bool unread) => ComCleanup.Run(cleanup =>
     {
-        using var inbox = OutlookFolderConnection.Open();
+        using var inbox = OutlookFolderConnection.Open(cleanup);
         var item = inbox.GetMail(entryId);
         try
         {
@@ -22,7 +22,7 @@ public sealed class OutlookMailReadStateUpdater : IMailReadStateUpdater
         }
         finally
         {
-            OutlookFolderConnection.Release(item);
+            cleanup.Release(item);
         }
-    }
+    });
 }

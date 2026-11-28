@@ -12,7 +12,7 @@ outlook-cli mail list --unread
 
 `--folder` を省略すると、既定の受信トレイ直下が対象になります。`--unread` を指定すると未読のメールに絞ります。受信日時の新しい順に取得し、既読状態は維持します。
 
-Outlook が起動済みなら現在のセッションを使います。未起動なら Windows の COM 登録で起動し、取得後に COM 参照を解放して Outlook の終了を待ちます。20秒以内に終了しなければ診断を出して終了コード `1` を返します。
+Outlook が起動済みなら現在のセッションを使います。未起動なら Windows の COM 登録で起動し、取得後に COM 参照を解放して Outlook の終了を待ちます。20秒以内に終了しなければ標準エラー出力に診断を出します。通常の終了コードは `1` です。`mail send` で送信依頼が受付済みの場合は `0` を返します。COM 参照の解放に失敗した場合も、残りの参照の解放を試みます。操作と後処理の両方に失敗した場合は、標準エラー出力に操作の診断と後処理の診断を順に表示します。
 
 標準出力の JSON と JSONL は BOM なしの UTF-8 で、非 ASCII 文字を Unicode エスケープで表現します。PowerShell では `ConvertFrom-Json` で元の文字列を取り出せます。
 
@@ -49,7 +49,7 @@ outlook-cli mail watch
 outlook-cli mail send --to 'recipient@example.com' --subject '打ち合わせ' --body '明日の資料を共有します。'
 ```
 
-`--to` に宛先1件、`--subject` に件名、`--body` にプレーンテキストの本文を指定します。クラシック Outlook セッションの既定のアカウントを使います。Outlook への送信依頼が成功すると、標準出力に `{"schemaVersion":1,"submitted":true}` を1行出力し、終了コード `0` を返します。エラーは標準エラー出力に表示し、終了コード `1` を返します。
+`--to` に宛先1件、`--subject` に件名、`--body` にプレーンテキストの本文を指定します。クラシック Outlook セッションの既定のアカウントを使います。Outlook への送信依頼が成功すると、標準出力に `{"schemaVersion":1,"submitted":true}` を1行出力し、終了コード `0` を返します。送信依頼が失敗した場合は標準エラー出力に診断を表示し、終了コード `1` を返します。Outlook が送信依頼を受け付けた後で COM 参照の解放に失敗した場合は、`submitted: true` と終了コード `0` を返し、後処理の診断を標準エラー出力に表示します。
 
 ### フォルダー、添付ファイル、返信
 
@@ -142,4 +142,4 @@ dotnet run --project src/OutlookCli -- mail list --unread
 dotnet test
 ```
 
-`OutlookCli.Core` が `IMailQuery` とデータ型を定義し、`OutlookCli.OutlookCom` がクラシック Outlook に接続します。コマンドのテストでは `IMailQuery` をスタブに差し替えるため、Outlook のインストールは不要です。
+`OutlookCli.Core` はメール・予定表・連絡先・タスクのインターフェースとデータ型を定義します。`OutlookCli` の起動時に、クラシック Outlook を操作する `OutlookCli.OutlookCom` の実装を渡します。コマンドのテストではすべての操作をテスト用の実装に差し替えます。COM の後処理、添付ファイルの保存、予定の ID と空き時間の計算も、Outlook を起動せずに検証できます。

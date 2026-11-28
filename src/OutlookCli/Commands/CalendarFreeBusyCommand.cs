@@ -1,6 +1,5 @@
 using System.CommandLine;
 using System.Globalization;
-using System.Runtime.InteropServices;
 using OutlookCli.Core.Calendar;
 
 namespace OutlookCli.Commands;
@@ -42,32 +41,15 @@ internal sealed class CalendarFreeBusyCommand(ICalendarOperations operations, Js
             return 1;
         }
 
-        try
-        {
-            foreach (var availability in operations.GetAvailability(attendees, start, end))
+        return CommandExecution.RunList(error, "空き時間情報の取得", () => operations.GetAvailability(attendees, start, end),
+            availability => json.WriteLine(new
             {
-                json.WriteLine(new
-                {
-                    schemaVersion = 1,
-                    availability.Attendee,
-                    From = availability.From.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                    To = availability.To.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                    availability.MinutesPerSlot,
-                    availability.Slots,
-                });
-            }
-
-            return 0;
-        }
-        catch (COMException exception)
-        {
-            error.WriteLine($"空き時間情報の取得に失敗しました (HRESULT 0x{exception.HResult:X8})。{exception.Message}");
-            return 1;
-        }
-        catch (InvalidOperationException exception)
-        {
-            error.WriteLine(exception.Message);
-            return 1;
-        }
+                schemaVersion = 1,
+                availability.Attendee,
+                From = availability.From.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                To = availability.To.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                availability.MinutesPerSlot,
+                availability.Slots,
+            }));
     }
 }

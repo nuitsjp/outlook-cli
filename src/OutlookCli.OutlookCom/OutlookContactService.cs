@@ -7,9 +7,12 @@ public sealed class OutlookContactService : IContactService
     private const int ContactsFolder = 10; // OlDefaultFolders.olFolderContacts
     private const int ContactItemClass = 40; // OlObjectClass.olContact
 
-    public IEnumerable<Contact> List(string? name, string? company)
+    public IEnumerable<Contact> List(string? name, string? company) =>
+        ComCleanup.Enumerate(cleanup => ListCore(cleanup, name, company));
+
+    private static IEnumerable<Contact> ListCore(ComCleanup cleanup, string? name, string? company)
     {
-        using var contacts = OutlookFolderConnection.Open(ContactsFolder);
+        using var contacts = OutlookFolderConnection.Open(cleanup, ContactsFolder);
         object? items = null;
         try
         {
@@ -31,7 +34,7 @@ public sealed class OutlookContactService : IContactService
                 }
                 finally
                 {
-                    OutlookFolderConnection.Release(item);
+                    cleanup.Release(item);
                 }
 
                 if (!Matches(contact.Name, name) || !Matches(contact.Company, company))
@@ -44,13 +47,13 @@ public sealed class OutlookContactService : IContactService
         }
         finally
         {
-            OutlookFolderConnection.Release(items);
+            cleanup.Release(items);
         }
     }
 
-    public Contact Get(string entryId)
+    public Contact Get(string entryId) => ComCleanup.Run(cleanup =>
     {
-        using var contacts = OutlookFolderConnection.Open(ContactsFolder);
+        using var contacts = OutlookFolderConnection.Open(cleanup, ContactsFolder);
         object? item = null;
         try
         {
@@ -60,18 +63,18 @@ public sealed class OutlookContactService : IContactService
                 throw new InvalidOperationException("指定された ID に対応する連絡先が見つかりません。");
             }
 
-            EnsureInContactsFolder(item, contacts.Folder);
+            EnsureInContactsFolder(cleanup, item, contacts.Folder);
             return ReadContact(item);
         }
         finally
         {
-            OutlookFolderConnection.Release(item);
+            cleanup.Release(item);
         }
-    }
+    });
 
-    public Contact Add(string name, string email, string? company)
+    public Contact Add(string name, string email, string? company) => ComCleanup.Run(cleanup =>
     {
-        using var contacts = OutlookFolderConnection.Open(ContactsFolder);
+        using var contacts = OutlookFolderConnection.Open(cleanup, ContactsFolder);
         object? item = null;
         object? items = null;
         try
@@ -93,16 +96,16 @@ public sealed class OutlookContactService : IContactService
         }
         finally
         {
-            OutlookFolderConnection.Release(items);
-            OutlookFolderConnection.Release(item);
+            cleanup.Release(items);
+            cleanup.Release(item);
         }
-    }
+    });
 
-    public Contact Lookup(string name)
+    public Contact Lookup(string name) => ComCleanup.Run(cleanup =>
     {
         // ResolveRecipient uses NameSpace.CreateRecipient followed by Recipient.Resolve,
         // which is Outlook's documented name-resolution path for the address book.
-        using var contacts = OutlookFolderConnection.Open();
+        using var contacts = OutlookFolderConnection.Open(cleanup);
         object? recipient = null;
         object? addressEntry = null;
         object? exchangeObject = null;
@@ -171,11 +174,11 @@ public sealed class OutlookContactService : IContactService
         }
         finally
         {
-            OutlookFolderConnection.Release(exchangeObject);
-            OutlookFolderConnection.Release(addressEntry);
-            OutlookFolderConnection.Release(recipient);
+            cleanup.Release(exchangeObject);
+            cleanup.Release(addressEntry);
+            cleanup.Release(recipient);
         }
-    }
+    });
 
     private static Contact ReadContact(object item)
     {
@@ -194,7 +197,7 @@ public sealed class OutlookContactService : IContactService
         string.IsNullOrWhiteSpace(filter)
             || value.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0;
 
-    private static void EnsureInContactsFolder(object item, object folder)
+    private static void EnsureInContactsFolder(ComCleanup cleanup, object item, object folder)
     {
         object? parent = null;
         try
@@ -210,7 +213,7 @@ public sealed class OutlookContactService : IContactService
         }
         finally
         {
-            OutlookFolderConnection.Release(parent);
+            cleanup.Release(parent);
         }
     }
 }

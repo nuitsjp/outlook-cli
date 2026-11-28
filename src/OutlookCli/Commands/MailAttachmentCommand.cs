@@ -1,5 +1,4 @@
 using System.CommandLine;
-using System.Runtime.InteropServices;
 using OutlookCli.Core.Mail;
 
 namespace OutlookCli.Commands;
@@ -63,32 +62,15 @@ internal sealed class MailAttachmentCommand(IMailOperations operations, JsonOutp
             return 1;
         }
 
-        try
-        {
-            foreach (var attachment in operations.ListAttachments(entryId!))
+        return CommandExecution.RunList(error, "添付ファイル一覧の取得", () => operations.ListAttachments(entryId!),
+            attachment => json.WriteLine(new
             {
-                json.WriteLine(new
-                {
-                    schemaVersion = 1,
-                    attachment.AttachmentId,
-                    attachment.FileName,
-                    attachment.Size,
-                    attachment.Type,
-                });
-            }
-
-            return 0;
-        }
-        catch (COMException exception)
-        {
-            error.WriteLine($"添付ファイル一覧の取得に失敗しました (HRESULT 0x{exception.HResult:X8})。{exception.Message}");
-            return 1;
-        }
-        catch (InvalidOperationException exception)
-        {
-            error.WriteLine(exception.Message);
-            return 1;
-        }
+                schemaVersion = 1,
+                attachment.AttachmentId,
+                attachment.FileName,
+                attachment.Size,
+                attachment.Type,
+            }));
     }
 
     private int ExecuteSave(string? entryId, string? attachmentId, string? path)
@@ -116,7 +98,7 @@ internal sealed class MailAttachmentCommand(IMailOperations operations, JsonOutp
         {
             fullPath = Path.GetFullPath(path);
         }
-        catch (ArgumentException exception)
+        catch (Exception exception) when (exception is ArgumentException or IOException)
         {
             error.WriteLine(exception.Message);
             return 1;
@@ -128,7 +110,7 @@ internal sealed class MailAttachmentCommand(IMailOperations operations, JsonOutp
             return 1;
         }
 
-        try
+        return CommandExecution.Run(error, "添付ファイルの保存", () =>
         {
             var result = operations.SaveAttachment(entryId!, attachmentId!, fullPath);
             json.WriteLine(new
@@ -139,17 +121,6 @@ internal sealed class MailAttachmentCommand(IMailOperations operations, JsonOutp
                 result.Path,
                 saved = true,
             });
-            return 0;
-        }
-        catch (COMException exception)
-        {
-            error.WriteLine($"添付ファイルの保存に失敗しました (HRESULT 0x{exception.HResult:X8})。{exception.Message}");
-            return 1;
-        }
-        catch (InvalidOperationException exception)
-        {
-            error.WriteLine(exception.Message);
-            return 1;
-        }
+        });
     }
 }

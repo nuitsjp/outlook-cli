@@ -1,73 +1,61 @@
-using System.Diagnostics;
-
 namespace OutlookCli.OutlookCom;
 
-internal sealed class OutlookFolderConnection : IDisposable
+internal sealed class OutlookFolderConnection(
+    ComCleanup cleanup, OutlookApplication application, object session, object folder) : IDisposable
 {
     private const int InboxFolder = 6; // OlDefaultFolders.olFolderInbox
     internal const int MailItemClass = 43; // OlObjectClass.olMail
-    private const int ShutdownTimeoutMilliseconds = 20_000;
+    private bool disposed;
 
-    private Process? startedOutlook;
-    private object? application;
-    private object? session;
-    private object? folder;
+    internal ComCleanup Cleanup { get; } = cleanup;
+    public object Application => application.Instance;
+    public object Session { get; } = session;
+    public object Folder { get; } = folder;
 
-    private OutlookFolderConnection()
+    internal static OutlookFolderConnection Open(
+        ComCleanup cleanup, int defaultFolder = InboxFolder, string? owner = null) =>
+        Open(cleanup, OutlookApplication.Open(cleanup), defaultFolder, owner);
+
+    internal static OutlookFolderConnection Open(
+        ComCleanup cleanup, OutlookApplication application, int defaultFolder, string? owner)
     {
-    }
-
-    public object Application => application!;
-    public object Session => session!;
-    public object Folder => folder!;
-
-    public static OutlookFolderConnection Open(int defaultFolder = InboxFolder, string? owner = null)
-    {
-        var connection = new OutlookFolderConnection();
+        object? session = null;
         try
         {
-            connection.Connect(defaultFolder, owner);
-            return connection;
+            session = ((dynamic)application.Instance).GetNamespace("MAPI");
+            object folder;
+            if (owner is null)
+            {
+                folder = ((dynamic)session).GetDefaultFolder(defaultFolder);
+            }
+            else
+            {
+                var recipient = ResolveRecipient(cleanup, session, owner);
+                try
+                {
+                    folder = ((dynamic)session).GetSharedDefaultFolder((dynamic)recipient, defaultFolder);
+                }
+                finally
+                {
+                    cleanup.Release(recipient);
+                }
+            }
+
+            return new OutlookFolderConnection(cleanup, application, session, folder);
         }
         catch
         {
-            connection.Dispose();
+            cleanup.Release(session);
+            application.Dispose();
             throw;
         }
     }
 
-    private void Connect(int defaultFolder, string? owner)
+    public object ResolveRecipient(string name) => ResolveRecipient(Cleanup, Session, name);
+
+    private static object ResolveRecipient(ComCleanup cleanup, object session, string name)
     {
-        using var currentProcess = Process.GetCurrentProcess();
-        var sessionId = currentProcess.SessionId;
-        using var existingOutlook = FindOutlookProcess(sessionId);
-        application = OutlookComObject.CreateApplication();
-        if (existingOutlook is null)
-        {
-            startedOutlook = FindOutlookProcess(sessionId);
-        }
-
-        session = ((dynamic)application).GetNamespace("MAPI");
-        if (owner is null)
-        {
-            folder = ((dynamic)Session).GetDefaultFolder(defaultFolder);
-            return;
-        }
-
-        var recipient = ResolveRecipient(owner);
-        try
-        {
-            folder = ((dynamic)Session).GetSharedDefaultFolder((dynamic)recipient, defaultFolder);
-        }
-        finally
-        {
-            Release(recipient);
-        }
-    }
-
-    public object ResolveRecipient(string name)
-    {
-        object recipient = ((dynamic)Session).CreateRecipient(name);
+        object recipient = ((dynamic)session).CreateRecipient(name);
         try
         {
             if (!(bool)((dynamic)recipient).Resolve())
@@ -79,7 +67,7 @@ internal sealed class OutlookFolderConnection : IDisposable
         }
         catch
         {
-            Release(recipient);
+            cleanup.Release(recipient);
             throw;
         }
     }
@@ -98,56 +86,29 @@ internal sealed class OutlookFolderConnection : IDisposable
         }
         catch
         {
-            OutlookComObject.Release(item);
+            Cleanup.Release(item);
             throw;
         }
     }
 
-    public object? GetReceivedItem(string entryId) => ((dynamic)session!).GetItemFromID(entryId);
+    public object? GetReceivedItem(string entryId) => ((dynamic)Session).GetItemFromID(entryId);
 
     public object? GetItem(string entryId)
     {
         var storeId = (string)((dynamic)Folder).StoreID;
-        return ((dynamic)session!).GetItemFromID(entryId, storeId);
+        return ((dynamic)Session).GetItemFromID(entryId, storeId);
     }
 
     public void Dispose()
     {
-        using var outlookToWaitFor = startedOutlook;
-        OutlookComObject.Release(folder);
-        OutlookComObject.Release(session);
-        OutlookComObject.Release(application);
-
-        // Outlook started by COM can exit after the last reference is released.
-        // Quit would also close a window the user opened during the query.
-        if (outlookToWaitFor is not null && !outlookToWaitFor.WaitForExit(ShutdownTimeoutMilliseconds))
+        if (disposed)
         {
-            throw new InvalidOperationException(
-                $"COM 参照の解放後も Outlook (PID {outlookToWaitFor.Id}) が終了しませんでした。");
+            return;
         }
+
+        disposed = true;
+        Cleanup.Release(Folder);
+        Cleanup.Release(Session);
+        application.Dispose();
     }
-
-    private static Process? FindOutlookProcess(int sessionId)
-    {
-        var processes = Process.GetProcessesByName("OUTLOOK");
-        Process? match = null;
-        try
-        {
-            match = Array.Find(processes, process => process.SessionId == sessionId);
-            return match;
-        }
-        finally
-        {
-            foreach (var process in processes)
-            {
-                if (process != match)
-                {
-                    process.Dispose();
-                }
-            }
-        }
-    }
-
-    internal static void Release(object? instance) => OutlookComObject.Release(instance);
-
 }

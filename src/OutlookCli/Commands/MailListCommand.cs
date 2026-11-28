@@ -1,6 +1,5 @@
 using System.CommandLine;
 using System.Globalization;
-using System.Runtime.InteropServices;
 using OutlookCli.Core.Mail;
 
 namespace OutlookCli.Commands;
@@ -63,24 +62,7 @@ internal sealed class MailListCommand(IMailQuery query, JsonOutput json, TextWri
             since = parsedSince;
         }
 
-        try
-        {
-            foreach (var mail in query.List(new MailListFilter(unreadOnly, folder, subject, since)))
-            {
-                MailJson.WriteSummary(json, mail);
-            }
-
-            return 0;
-        }
-        catch (COMException exception)
-        {
-            error.WriteLine($"メール一覧の取得に失敗しました (HRESULT 0x{exception.HResult:X8})。{exception.Message}");
-            return 1;
-        }
-        catch (InvalidOperationException exception)
-        {
-            error.WriteLine(exception.Message);
-            return 1;
-        }
+        return CommandExecution.RunList(error, "メール一覧の取得", () => query.List(new MailListFilter(unreadOnly, folder, subject, since)),
+            mail => json.WriteLine(new MailSummaryJson(mail)));
     }
 }

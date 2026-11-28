@@ -1,5 +1,4 @@
 using System.CommandLine;
-using System.Runtime.InteropServices;
 using OutlookCli.Core.Mail;
 
 namespace OutlookCli.Commands;
@@ -27,32 +26,7 @@ internal sealed class MailShowCommand(IMailQuery query, JsonOutput json, TextWri
             return 1;
         }
 
-        try
-        {
-            var mail = query.Get(entryId);
-            json.WriteLine(new
-            {
-                schemaVersion = 1,
-                mail.Summary.EntryId,
-                mail.Summary.ReceivedAt,
-                mail.Summary.SenderName,
-                mail.Summary.Subject,
-                mail.To,
-                mail.Cc,
-                mail.Bcc,
-                mail.Body,
-            });
-            return 0;
-        }
-        catch (COMException exception)
-        {
-            error.WriteLine($"メール明細の取得に失敗しました (HRESULT 0x{exception.HResult:X8})。{exception.Message}");
-            return 1;
-        }
-        catch (InvalidOperationException exception)
-        {
-            error.WriteLine(exception.Message);
-            return 1;
-        }
+        return CommandExecution.Run(error, "メール明細の取得", () =>
+            json.WriteLine(new MailDetailJson(query.Get(entryId))));
     }
 }

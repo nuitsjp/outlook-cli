@@ -1,5 +1,4 @@
 using System.CommandLine;
-using System.Runtime.InteropServices;
 using OutlookCli.Core.Mail;
 
 namespace OutlookCli.Commands;
@@ -39,7 +38,7 @@ internal sealed class MailMoveCommand(IMailOperations operations, JsonOutput jso
             return 1;
         }
 
-        try
+        return CommandExecution.Run(error, "メールの移動", () =>
         {
             var result = operations.Move(entryId!, folder!);
             json.WriteLine(new
@@ -50,17 +49,6 @@ internal sealed class MailMoveCommand(IMailOperations operations, JsonOutput jso
                 result.StoreId,
                 result.Changed,
             });
-            return 0;
-        }
-        catch (COMException exception)
-        {
-            error.WriteLine($"メールの移動に失敗しました (HRESULT 0x{exception.HResult:X8})。{exception.Message}");
-            return 1;
-        }
-        catch (InvalidOperationException exception)
-        {
-            error.WriteLine(exception.Message);
-            return 1;
-        }
+        });
     }
 }

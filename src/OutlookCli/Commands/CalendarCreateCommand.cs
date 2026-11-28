@@ -1,6 +1,5 @@
 using System.CommandLine;
 using System.Globalization;
-using System.Runtime.InteropServices;
 using OutlookCli.Core.Calendar;
 
 namespace OutlookCli.Commands;
@@ -38,7 +37,7 @@ internal sealed class CalendarCreateCommand(ICalendarOperations operations, Json
             return 1;
         }
 
-        try
+        return CommandExecution.Run(error, "予定の登録", () =>
         {
             var appointment = operations.Create(subject!, startAt, endAt);
             json.WriteLine(new
@@ -49,17 +48,6 @@ internal sealed class CalendarCreateCommand(ICalendarOperations operations, Json
                 appointment.StartAt,
                 appointment.EndAt,
             });
-            return 0;
-        }
-        catch (COMException exception)
-        {
-            error.WriteLine($"予定の登録に失敗しました (HRESULT 0x{exception.HResult:X8})。{exception.Message}");
-            return 1;
-        }
-        catch (InvalidOperationException exception)
-        {
-            error.WriteLine(exception.Message);
-            return 1;
-        }
+        });
     }
 }

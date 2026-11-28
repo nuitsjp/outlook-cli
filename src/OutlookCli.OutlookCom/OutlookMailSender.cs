@@ -7,9 +7,19 @@ public sealed class OutlookMailSender : IMailSender
     private const int MailItemType = 0; // OlItemType.olMailItem
     private const int PlainText = 1; // OlBodyFormat.olFormatPlain
 
-    public void Send(string to, string subject, string body)
+    public void Send(string to, string subject, string body) => ComCleanup.Run(cleanup =>
     {
-        var application = OutlookComObject.CreateApplication();
+        using var application = OutlookApplication.Open(cleanup);
+        Send(cleanup, application.Instance, to, subject, body);
+    });
+
+    internal static void Send(
+        ComCleanup cleanup,
+        object application,
+        string to,
+        string subject,
+        string body)
+    {
         object? item = null;
         object? recipients = null;
         object? recipient = null;
@@ -28,13 +38,13 @@ public sealed class OutlookMailSender : IMailSender
             mail.BodyFormat = PlainText;
             mail.Body = body;
             mail.Send();
+            cleanup.MarkMailSubmitted();
         }
         finally
         {
-            OutlookComObject.Release(recipient);
-            OutlookComObject.Release(recipients);
-            OutlookComObject.Release(item);
-            OutlookComObject.Release(application);
+            cleanup.Release(recipient);
+            cleanup.Release(recipients);
+            cleanup.Release(item);
         }
     }
 }

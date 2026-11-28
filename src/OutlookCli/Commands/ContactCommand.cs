@@ -1,5 +1,4 @@
 using System.CommandLine;
-using System.Runtime.InteropServices;
 using OutlookCli.Core.Contacts;
 
 namespace OutlookCli.Commands;
@@ -79,23 +78,8 @@ internal sealed class ContactCommand(IContactService service, JsonOutput json, T
 
     private int ExecuteList(string? name, string? company)
     {
-        try
-        {
-            foreach (var contact in service.List(name, company))
-            {
-                WriteContact(contact);
-            }
-
-            return 0;
-        }
-        catch (COMException exception)
-        {
-            return ReportComFailure("連絡先一覧の取得", exception);
-        }
-        catch (InvalidOperationException exception)
-        {
-            return ReportFailure(exception);
-        }
+        return CommandExecution.RunList(error, "連絡先一覧の取得", () => service.List(name, company),
+            WriteSummary);
     }
 
     private int ExecuteShow(string? entryId)
@@ -106,19 +90,21 @@ internal sealed class ContactCommand(IContactService service, JsonOutput json, T
             return 1;
         }
 
-        try
+        return CommandExecution.Run(error, "連絡先の取得", () =>
         {
-            WriteContact(service.Get(entryId!), detailed: true);
-            return 0;
-        }
-        catch (COMException exception)
-        {
-            return ReportComFailure("連絡先の取得", exception);
-        }
-        catch (InvalidOperationException exception)
-        {
-            return ReportFailure(exception);
-        }
+            var contact = service.Get(entryId!);
+            json.WriteLine(new
+            {
+                schemaVersion = 1,
+                contact.EntryId,
+                contact.Name,
+                contact.Email,
+                contact.Email2,
+                contact.Email3,
+                contact.Company,
+                contact.BusinessPhone,
+            });
+        });
     }
 
     private int ExecuteAdd(string name, string email, string? company)
@@ -135,19 +121,8 @@ internal sealed class ContactCommand(IContactService service, JsonOutput json, T
             return 1;
         }
 
-        try
-        {
-            WriteContact(service.Add(name, email, company));
-            return 0;
-        }
-        catch (COMException exception)
-        {
-            return ReportComFailure("連絡先の追加", exception);
-        }
-        catch (InvalidOperationException exception)
-        {
-            return ReportFailure(exception);
-        }
+        return CommandExecution.Run(error, "連絡先の追加", () =>
+            WriteSummary(service.Add(name, email, company)));
     }
 
     private int ExecuteLookup(string? name)
@@ -158,51 +133,21 @@ internal sealed class ContactCommand(IContactService service, JsonOutput json, T
             return 1;
         }
 
-        try
+        return CommandExecution.Run(error, "Exchange 社内アドレス帳の検索", () =>
         {
-            WriteContact(service.Lookup(name!), includeEntryId: false);
-            return 0;
-        }
-        catch (COMException exception)
-        {
-            return ReportComFailure("Exchange 社内アドレス帳の検索", exception);
-        }
-        catch (InvalidOperationException exception)
-        {
-            return ReportFailure(exception);
-        }
+            var contact = service.Lookup(name!);
+            json.WriteLine(new
+            {
+                schemaVersion = 1,
+                contact.Name,
+                contact.Email,
+                contact.Company,
+            });
+        });
     }
 
-    private void WriteContact(Contact contact, bool detailed = false, bool includeEntryId = true)
+    private void WriteSummary(Contact contact)
     {
-        if (detailed)
-        {
-            json.WriteLine(new
-            {
-                schemaVersion = 1,
-                contact.EntryId,
-                contact.Name,
-                contact.Email,
-                contact.Email2,
-                contact.Email3,
-                contact.Company,
-                contact.BusinessPhone,
-            });
-            return;
-        }
-
-        if (!includeEntryId)
-        {
-            json.WriteLine(new
-            {
-                schemaVersion = 1,
-                contact.Name,
-                contact.Email,
-                contact.Company,
-            });
-            return;
-        }
-
         json.WriteLine(new
         {
             schemaVersion = 1,
@@ -211,17 +156,5 @@ internal sealed class ContactCommand(IContactService service, JsonOutput json, T
             contact.Email,
             contact.Company,
         });
-    }
-
-    private int ReportComFailure(string operation, COMException exception)
-    {
-        error.WriteLine($"{operation}に失敗しました (HRESULT 0x{exception.HResult:X8})。{exception.Message}");
-        return 1;
-    }
-
-    private int ReportFailure(InvalidOperationException exception)
-    {
-        error.WriteLine(exception.Message);
-        return 1;
     }
 }

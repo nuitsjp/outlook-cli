@@ -1,5 +1,4 @@
 using System.CommandLine;
-using System.Runtime.InteropServices;
 using OutlookCli.Core.Mail;
 
 namespace OutlookCli.Commands;
@@ -29,7 +28,7 @@ internal sealed class MailReadStateCommand(IMailReadStateUpdater updater, JsonOu
             return 1;
         }
 
-        try
+        return CommandExecution.Run(error, unread ? "メールの未読化" : "メールの既読化", () =>
         {
             var change = updater.SetUnread(entryId, unread);
             json.WriteLine(new
@@ -39,18 +38,6 @@ internal sealed class MailReadStateCommand(IMailReadStateUpdater updater, JsonOu
                 unread,
                 change.Changed,
             });
-            return 0;
-        }
-        catch (COMException exception)
-        {
-            var state = unread ? "未読" : "既読";
-            error.WriteLine($"メールの{state}化に失敗しました (HRESULT 0x{exception.HResult:X8})。{exception.Message}");
-            return 1;
-        }
-        catch (InvalidOperationException exception)
-        {
-            error.WriteLine(exception.Message);
-            return 1;
-        }
+        });
     }
 }

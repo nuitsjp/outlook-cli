@@ -1,5 +1,4 @@
 using System.CommandLine;
-using System.Runtime.InteropServices;
 using OutlookCli.Core.Calendar;
 
 namespace OutlookCli.Commands;
@@ -35,33 +34,7 @@ internal sealed class CalendarShowCommand(ICalendarQuery query, JsonOutput json,
             return 1;
         }
 
-        try
-        {
-            var appointment = query.Get(id!, owner);
-            json.WriteLine(new
-            {
-                schemaVersion = 1,
-                appointment.Summary.Id,
-                appointment.Summary.Subject,
-                appointment.Summary.StartAt,
-                appointment.Summary.EndAt,
-                appointment.Summary.IsAllDay,
-                appointment.Summary.Location,
-                appointment.Organizer,
-                appointment.Attendees,
-                appointment.Body,
-            });
-            return 0;
-        }
-        catch (COMException exception)
-        {
-            error.WriteLine($"予定明細の取得に失敗しました (HRESULT 0x{exception.HResult:X8})。{exception.Message}");
-            return 1;
-        }
-        catch (InvalidOperationException exception)
-        {
-            error.WriteLine(exception.Message);
-            return 1;
-        }
+        return CommandExecution.Run(error, "予定明細の取得", () =>
+            json.WriteLine(new CalendarDetailJson(query.Get(id!, owner))));
     }
 }

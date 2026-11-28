@@ -16,24 +16,26 @@ internal static class Program
     private static int Main(string[] args)
     {
         Console.OutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
-        return Run(
-            args, new OutlookMailQuery(), new OutlookMailReadStateUpdater(), new OutlookMailWatcher(),
-            new OutlookCalendarQuery(), new OutlookMailSender(), Console.Out, Console.Error);
+        var mail = new OutlookMailQuery();
+        var calendar = new OutlookCalendarQuery();
+        var services = new CliServices(
+            MailQuery: mail,
+            MailReadStateUpdater: new OutlookMailReadStateUpdater(),
+            MailWatcher: new OutlookMailWatcher(),
+            CalendarQuery: calendar,
+            MailSender: new OutlookMailSender(),
+            MailOperations: mail,
+            CalendarOperations: calendar,
+            ContactService: new OutlookContactService(),
+            TaskService: new OutlookTaskService());
+        return Run(args, services, Console.Out, Console.Error);
     }
 
     internal static int Run(
         string[] args,
-        IMailQuery query,
-        IMailReadStateUpdater updater,
-        IMailWatcher watcher,
-        ICalendarQuery calendarQuery,
-        IMailSender sender,
+        CliServices services,
         TextWriter output,
-        TextWriter error,
-        ICalendarOperations? calendarOperations = null,
-        IContactService? contactService = null,
-        ITaskService? taskService = null,
-        IMailOperations? mailOperations = null)
+        TextWriter error)
     {
         var root = new RootCommand("クラシック Outlook を操作します。");
         var json = new JsonOutput(output);
@@ -41,38 +43,36 @@ internal static class Program
         var help = (HelpAction)root.Options.OfType<HelpOption>().Single().Action!;
         root.SetAction(help.Invoke);
         mail.SetAction(help.Invoke);
-        mail.Subcommands.Add(new MailListCommand(query, json, error).Create());
-        mail.Subcommands.Add(new MailShowCommand(query, json, error).Create());
-        mail.Subcommands.Add(new MailWatchCommand(watcher, json, error).Create());
-        var readState = new MailReadStateCommand(updater, json, error);
+        mail.Subcommands.Add(new MailListCommand(services.MailQuery, json, error).Create());
+        mail.Subcommands.Add(new MailShowCommand(services.MailQuery, json, error).Create());
+        mail.Subcommands.Add(new MailWatchCommand(services.MailWatcher, json, error).Create());
+        var readState = new MailReadStateCommand(services.MailReadStateUpdater, json, error);
         mail.Subcommands.Add(readState.Create(unread: false));
         mail.Subcommands.Add(readState.Create(unread: true));
-        mail.Subcommands.Add(new MailSendCommand(sender, json, error).Create());
-        var mailActions = mailOperations ?? new OutlookMailQuery();
-        var mailFolders = new MailFolderCommand(mailActions, json, error).Create();
+        mail.Subcommands.Add(new MailSendCommand(services.MailSender, json, error).Create());
+        var mailFolders = new MailFolderCommand(services.MailOperations, json, error).Create();
         mailFolders.SetAction(help.Invoke);
         mail.Subcommands.Add(mailFolders);
-        var mailAttachments = new MailAttachmentCommand(mailActions, json, error).Create();
+        var mailAttachments = new MailAttachmentCommand(services.MailOperations, json, error).Create();
         mailAttachments.SetAction(help.Invoke);
         mail.Subcommands.Add(mailAttachments);
-        mail.Subcommands.Add(new MailMoveCommand(mailActions, json, error).Create());
-        mail.Subcommands.Add(new MailReplyCommand(mailActions, json, error).Create());
+        mail.Subcommands.Add(new MailMoveCommand(services.MailOperations, json, error).Create());
+        mail.Subcommands.Add(new MailReplyCommand(services.MailOperations, json, error).Create());
         root.Subcommands.Add(mail);
 
         var calendar = new Command("calendar", "Outlook の予定表を操作します。");
         calendar.SetAction(help.Invoke);
-        calendar.Subcommands.Add(new CalendarListCommand(calendarQuery, json, error).Create());
-        calendar.Subcommands.Add(new CalendarShowCommand(calendarQuery, json, error).Create());
-        var operations = calendarOperations ?? new OutlookCalendarQuery();
-        calendar.Subcommands.Add(new CalendarCreateCommand(operations, json, error).Create());
-        calendar.Subcommands.Add(new CalendarFreeBusyCommand(operations, json, error).Create());
+        calendar.Subcommands.Add(new CalendarListCommand(services.CalendarQuery, json, error).Create());
+        calendar.Subcommands.Add(new CalendarShowCommand(services.CalendarQuery, json, error).Create());
+        calendar.Subcommands.Add(new CalendarCreateCommand(services.CalendarOperations, json, error).Create());
+        calendar.Subcommands.Add(new CalendarFreeBusyCommand(services.CalendarOperations, json, error).Create());
         root.Subcommands.Add(calendar);
 
-        var contact = new ContactCommand(contactService ?? new OutlookContactService(), json, error).Create();
+        var contact = new ContactCommand(services.ContactService, json, error).Create();
         contact.SetAction(help.Invoke);
         root.Subcommands.Add(contact);
 
-        var task = new TaskCommand(taskService ?? new OutlookTaskService(), json, error).Create();
+        var task = new TaskCommand(services.TaskService, json, error).Create();
         task.SetAction(help.Invoke);
         root.Subcommands.Add(task);
 
@@ -89,4 +89,15 @@ internal static class Program
 
         return parsed.Invoke(new InvocationConfiguration { Output = output, Error = error });
     }
+
+    internal sealed record CliServices(
+        IMailQuery MailQuery,
+        IMailReadStateUpdater MailReadStateUpdater,
+        IMailWatcher MailWatcher,
+        ICalendarQuery CalendarQuery,
+        IMailSender MailSender,
+        IMailOperations MailOperations,
+        ICalendarOperations CalendarOperations,
+        IContactService ContactService,
+        ITaskService TaskService);
 }
