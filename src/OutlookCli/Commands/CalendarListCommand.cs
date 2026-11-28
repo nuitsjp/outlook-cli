@@ -19,14 +19,16 @@ internal sealed class CalendarListCommand(ICalendarQuery query, JsonOutput json,
             Description = "取得期間の終了日です (YYYY-MM-DD、この日は含みません)。",
             Required = true,
         };
-        var command = new Command("list", "既定の予定表から指定期間の予定を取得します。");
+        var owner = new Option<string>("--owner") { Description = "共有予定表の所有者のメールアドレスです。" };
+        var command = new Command("list", "指定期間の予定を取得します。");
         command.Options.Add(from);
         command.Options.Add(to);
-        command.SetAction(result => Execute(result.GetValue(from), result.GetValue(to)));
+        command.Options.Add(owner);
+        command.SetAction(result => Execute(result.GetValue(from), result.GetValue(to), result.GetValue(owner)));
         return command;
     }
 
-    private int Execute(string? from, string? to)
+    private int Execute(string? from, string? to, string? owner)
     {
         if (!DateTime.TryParseExact(from, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var start)
             || !DateTime.TryParseExact(to, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var end))
@@ -41,9 +43,15 @@ internal sealed class CalendarListCommand(ICalendarQuery query, JsonOutput json,
             return 1;
         }
 
+        if (owner is not null && string.IsNullOrWhiteSpace(owner))
+        {
+            error.WriteLine("--owner に共有予定表の所有者を指定してください。");
+            return 1;
+        }
+
         try
         {
-            foreach (var appointment in query.List(start, end))
+            foreach (var appointment in query.List(start, end, owner))
             {
                 json.WriteLine(new
                 {

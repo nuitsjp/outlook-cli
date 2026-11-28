@@ -18,14 +18,15 @@ internal sealed class OutlookFolderConnection : IDisposable
     }
 
     public object Application => application!;
+    public object Session => session!;
     public object Folder => folder!;
 
-    public static OutlookFolderConnection Open(int defaultFolder = InboxFolder)
+    public static OutlookFolderConnection Open(int defaultFolder = InboxFolder, string? owner = null)
     {
         var connection = new OutlookFolderConnection();
         try
         {
-            connection.Connect(defaultFolder);
+            connection.Connect(defaultFolder, owner);
             return connection;
         }
         catch
@@ -35,7 +36,7 @@ internal sealed class OutlookFolderConnection : IDisposable
         }
     }
 
-    private void Connect(int defaultFolder)
+    private void Connect(int defaultFolder, string? owner)
     {
         using var currentProcess = Process.GetCurrentProcess();
         var sessionId = currentProcess.SessionId;
@@ -47,7 +48,40 @@ internal sealed class OutlookFolderConnection : IDisposable
         }
 
         session = ((dynamic)application).GetNamespace("MAPI");
-        folder = ((dynamic)session!).GetDefaultFolder(defaultFolder);
+        if (owner is null)
+        {
+            folder = ((dynamic)Session).GetDefaultFolder(defaultFolder);
+            return;
+        }
+
+        var recipient = ResolveRecipient(owner);
+        try
+        {
+            folder = ((dynamic)Session).GetSharedDefaultFolder((dynamic)recipient, defaultFolder);
+        }
+        finally
+        {
+            Release(recipient);
+        }
+    }
+
+    public object ResolveRecipient(string name)
+    {
+        object recipient = ((dynamic)Session).CreateRecipient(name);
+        try
+        {
+            if (!(bool)((dynamic)recipient).Resolve())
+            {
+                throw new InvalidOperationException($"Outlook で宛先を解決できませんでした。{name}");
+            }
+
+            return recipient;
+        }
+        catch
+        {
+            Release(recipient);
+            throw;
+        }
     }
 
     public object GetMail(string entryId)

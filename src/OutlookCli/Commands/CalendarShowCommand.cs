@@ -13,13 +13,15 @@ internal sealed class CalendarShowCommand(ICalendarQuery query, JsonOutput json,
             Description = "一覧で取得した予定の ID です。",
             Required = true,
         };
+        var owner = new Option<string>("--owner") { Description = "共有予定表の所有者のメールアドレスです。" };
         var command = new Command("show", "指定した予定の明細を取得します。");
         command.Options.Add(id);
-        command.SetAction(result => Execute(result.GetValue(id)));
+        command.Options.Add(owner);
+        command.SetAction(result => Execute(result.GetValue(id), result.GetValue(owner)));
         return command;
     }
 
-    private int Execute(string? id)
+    private int Execute(string? id, string? owner)
     {
         if (string.IsNullOrWhiteSpace(id))
         {
@@ -27,9 +29,15 @@ internal sealed class CalendarShowCommand(ICalendarQuery query, JsonOutput json,
             return 1;
         }
 
+        if (owner is not null && string.IsNullOrWhiteSpace(owner))
+        {
+            error.WriteLine("--owner に共有予定表の所有者を指定してください。");
+            return 1;
+        }
+
         try
         {
-            var appointment = query.Get(id!);
+            var appointment = query.Get(id!, owner);
             json.WriteLine(new
             {
                 schemaVersion = 1,

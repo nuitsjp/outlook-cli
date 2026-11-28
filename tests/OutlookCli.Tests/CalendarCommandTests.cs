@@ -296,6 +296,108 @@ public sealed class CalendarCommandTests
     private static IMailSender UnusedMailSender() =>
         new UnusedMailSenderStub();
 
+    [Fact]
+    public void Create_parses_offsets_and_returns_an_id_for_show()
+    {
+        var operations = new RecordingCalendarOperations();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        var exitCode = RunNewCommand(
+            ["calendar", "create", "--subject", "作業枠", "--start", "2026-12-01T13:00+09:00", "--end", "2026-12-01T05:00Z"],
+            operations, output, error);
+
+        Assert.Equal(0, exitCode);
+        Assert.Empty(error.ToString());
+        var call = Assert.Single(operations.Created);
+        Assert.Equal(TimeSpan.FromHours(9), call.Start.Offset);
+        Assert.Equal(TimeSpan.FromHours(1), call.End - call.Start);
+        using var json = JsonDocument.Parse(output.ToString());
+        Assert.Equal("appointment-id", json.RootElement.GetProperty("id").GetString());
+    }
+
+    [Theory]
+    [InlineData("2026-12-01T13:00")]
+    [InlineData("2026-12-01T12:00+09:00")]
+    public void Create_rejects_an_unzoned_or_non_increasing_end(string end)
+    {
+        var operations = new RecordingCalendarOperations();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        var exitCode = RunNewCommand(
+            ["calendar", "create", "--subject", "作業枠", "--start", "2026-12-01T13:00+09:00", "--end", end],
+            operations, output, error);
+
+        Assert.Equal(1, exitCode);
+        Assert.Empty(operations.Created);
+        Assert.Empty(output.ToString());
+    }
+
+    [Fact]
+    public void Free_busy_passes_repeated_attendees_and_writes_one_line_each()
+    {
+        var operations = new RecordingCalendarOperations();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        var exitCode = RunNewCommand(
+            ["calendar", "free-busy", "--attendee", "a@example.com", "--attendee", "b@example.com",
+                "--from", "2026-12-01", "--to", "2026-12-02"],
+            operations, output, error);
+
+        Assert.Equal(0, exitCode);
+        Assert.Empty(error.ToString());
+        Assert.Equal(["a@example.com", "b@example.com"], operations.Attendees);
+        var lines = output.ToString().Split([Environment.NewLine], StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(2, lines.Length);
+        using var json = JsonDocument.Parse(lines[1]);
+        Assert.Equal("b@example.com", json.RootElement.GetProperty("attendee").GetString());
+        Assert.Equal("2026-12-01", json.RootElement.GetProperty("from").GetString());
+        Assert.Equal(30, json.RootElement.GetProperty("minutesPerSlot").GetInt32());
+    }
+
+    [Fact]
+    public void Shared_calendar_list_and_show_pass_the_owner()
+    {
+        var query = new RecordingCalendarQuery(_ => [], id => new CalendarDetail(
+            new CalendarSummary(id, "共有予定", DateTimeOffset.Now, DateTimeOffset.Now, false, ""), "", [], ""));
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        var owner = "owner@example.com";
+        var listExit = OutlookCli.Program.Run(
+            ["calendar", "list", "--from", "2026-12-01", "--to", "2026-12-02", "--owner", owner],
+            UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, UnusedMailSender(), output, error);
+        var showExit = OutlookCli.Program.Run(
+            ["calendar", "show", "--id", "shared-id", "--owner", owner],
+            UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, UnusedMailSender(), output, error);
+
+        Assert.Equal(0, listExit);
+        Assert.Equal(0, showExit);
+        Assert.Empty(error.ToString());
+        Assert.Equal([owner, owner], query.Owners);
+    }
+
+    private static int RunNewCommand(string[] args, ICalendarOperations operations, TextWriter output, TextWriter error) =>
+        OutlookCli.Program.Run(args, UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(),
+            new RecordingCalendarQuery(_ => []), UnusedMailSender(), output, error, calendarOperations: operations);
+
+    private sealed class RecordingCalendarOperations : ICalendarOperations
+    {
+        public List<(DateTimeOffset Start, DateTimeOffset End)> Created { get; } = [];
+        public IReadOnlyList<string> Attendees { get; private set; } = [];
+
+        public CalendarSummary Create(string subject, DateTimeOffset start, DateTimeOffset end)
+        {
+            Created.Add((start, end));
+            return new CalendarSummary("appointment-id", subject, start, end, false, "");
+        }
+
+        public IEnumerable<CalendarAvailability> GetAvailability(
+            IReadOnlyList<string> attendees, DateTime from, DateTime to)
+        {
+            Attendees = attendees;
+            return attendees.Select(attendee => new CalendarAvailability(attendee, from, to, 30, new string('0', 48)));
+        }
+    }
+
     private sealed class RecordingCalendarQuery(
         Func<(DateTime From, DateTime To), IEnumerable<CalendarSummary>> listHandler,
         Func<string, CalendarDetail>? getHandler = null) : ICalendarQuery
@@ -303,23 +405,26 @@ public sealed class CalendarCommandTests
         public List<(DateTime From, DateTime To)> ListArguments { get; } = [];
 
         public List<string> GetArguments { get; } = [];
+        public List<string?> Owners { get; } = [];
 
-        public IEnumerable<CalendarSummary> List(DateTime from, DateTime to)
+        public IEnumerable<CalendarSummary> List(DateTime from, DateTime to, string? owner = null)
         {
             ListArguments.Add((from, to));
+            Owners.Add(owner);
             return listHandler((from, to));
         }
 
-        public CalendarDetail Get(string id)
+        public CalendarDetail Get(string id, string? owner = null)
         {
             GetArguments.Add(id);
+            Owners.Add(owner);
             return (getHandler ?? throw new InvalidOperationException("Get must not be called"))(id);
         }
     }
 
     private sealed class UnusedMailQueryStub : IMailQuery
     {
-        public IEnumerable<MailSummary> List(bool unreadOnly) =>
+        public IEnumerable<MailSummary> List(MailListFilter filter) =>
             throw new InvalidOperationException("Mail list must not be called");
 
         public MailDetail Get(string entryId) =>

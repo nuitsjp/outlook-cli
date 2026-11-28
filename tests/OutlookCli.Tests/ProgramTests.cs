@@ -12,6 +12,10 @@ public sealed class ProgramTests
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
     public void Command_group_without_subcommand_matches_explicit_help(int group)
     {
         string[] args = group switch
@@ -19,6 +23,10 @@ public sealed class ProgramTests
             0 => [],
             1 => ["mail"],
             2 => ["calendar"],
+            3 => ["contact"],
+            4 => ["task"],
+            5 => ["mail", "folder"],
+            6 => ["mail", "attachment"],
             _ => throw new ArgumentOutOfRangeException(nameof(group)),
         };
         var query = new RecordingMailQuery(_ => throw new InvalidOperationException("List must not be called"));
@@ -120,6 +128,24 @@ public sealed class ProgramTests
         Assert.Equal(0, exitCode);
         Assert.Equal([false], query.UnreadOnlyArguments);
         Assert.Empty(error.ToString());
+    }
+
+    [Fact]
+    public void Mail_list_passes_combined_filters_to_the_query()
+    {
+        var query = new RecordingMailQuery(_ => []);
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        var exitCode = Run(
+            ["mail", "list", "--folder", "folder-1", "--subject", "請求書",
+                "--since", "2026-11-27T09:15:30+09:00", "--unread"],
+            query, UnusedUpdater(), UnusedWatcher(), output, error);
+
+        Assert.Equal(0, exitCode);
+        Assert.Empty(error.ToString());
+        Assert.Equal(new MailListFilter(
+            true, "folder-1", "請求書", new DateTimeOffset(2026, 11, 27, 9, 15, 30, TimeSpan.FromHours(9))),
+            query.LastFilter);
     }
 
     [Theory]
@@ -555,10 +581,10 @@ public sealed class ProgramTests
 
     private sealed class UnusedCalendarQuery : ICalendarQuery
     {
-        public IEnumerable<CalendarSummary> List(DateTime from, DateTime to) =>
+        public IEnumerable<CalendarSummary> List(DateTime from, DateTime to, string? owner = null) =>
             throw new NotSupportedException();
 
-        public CalendarDetail Get(string id) => throw new NotSupportedException();
+        public CalendarDetail Get(string id, string? owner = null) => throw new NotSupportedException();
     }
 
     private sealed class RecordingMailQuery(
@@ -571,10 +597,13 @@ public sealed class ProgramTests
 
         public bool WasCalled => UnreadOnlyArguments.Count > 0 || GetEntryIdArguments.Count > 0;
 
-        public IEnumerable<MailSummary> List(bool unreadOnly)
+        public MailListFilter? LastFilter { get; private set; }
+
+        public IEnumerable<MailSummary> List(MailListFilter filter)
         {
-            UnreadOnlyArguments.Add(unreadOnly);
-            return listHandler(unreadOnly);
+            LastFilter = filter;
+            UnreadOnlyArguments.Add(filter.UnreadOnly);
+            return listHandler(filter.UnreadOnly);
         }
 
         public MailDetail Get(string entryId)
