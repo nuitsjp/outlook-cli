@@ -4,7 +4,7 @@ using OutlookCli.Core.Mail;
 
 namespace OutlookCli.Commands;
 
-internal sealed class MailWatchCommand(IMailWatcher watcher, TextWriter output, TextWriter error)
+internal sealed class MailWatchCommand(IMailWatcher watcher, JsonOutput json, TextWriter error)
 {
     public Command Create()
     {
@@ -28,8 +28,8 @@ internal sealed class MailWatchCommand(IMailWatcher watcher, TextWriter output, 
             watcher.Watch(
                 mail =>
                 {
-                    MailJson.WriteSummary(output, mail);
-                    output.Flush();
+                    MailJson.WriteSummary(json, mail);
+                    json.Flush();
                 },
                 () => error.WriteLine("Outlook の受信イベントを購読しました。終了するには Ctrl+C を押してください。"),
                 stopping.Token);

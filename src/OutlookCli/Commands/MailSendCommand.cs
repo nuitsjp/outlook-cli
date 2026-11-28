@@ -1,11 +1,10 @@
 using System.CommandLine;
 using System.Runtime.InteropServices;
-using System.Text.Json;
 using OutlookCli.Core.Mail;
 
 namespace OutlookCli.Commands;
 
-internal sealed class MailSendCommand(IMailSender sender, TextWriter output, TextWriter error)
+internal sealed class MailSendCommand(IMailSender sender, JsonOutput json, TextWriter error)
 {
     public Command Create()
     {
@@ -32,7 +31,7 @@ internal sealed class MailSendCommand(IMailSender sender, TextWriter output, Tex
         try
         {
             sender.Send(to, subject, body);
-            output.WriteLine(JsonSerializer.Serialize(new { schemaVersion = 1, submitted = true }, MailJson.Options));
+            json.WriteLine(new { schemaVersion = 1, submitted = true });
             return 0;
         }
         catch (COMException exception)

@@ -2,40 +2,41 @@ using System.Diagnostics;
 
 namespace OutlookCli.OutlookCom;
 
-internal sealed class OutlookInbox : IDisposable
+internal sealed class OutlookFolderConnection : IDisposable
 {
     private const int InboxFolder = 6; // OlDefaultFolders.olFolderInbox
     internal const int MailItemClass = 43; // OlObjectClass.olMail
-    private static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(20);
+    private const int ShutdownTimeoutMilliseconds = 20_000;
 
     private Process? startedOutlook;
     private object? application;
     private object? session;
     private object? folder;
 
-    private OutlookInbox()
+    private OutlookFolderConnection()
     {
     }
 
     public object Application => application!;
+    public object Session => session!;
     public object Folder => folder!;
 
-    public static OutlookInbox Open()
+    public static OutlookFolderConnection Open(int defaultFolder = InboxFolder, string? owner = null)
     {
-        var inbox = new OutlookInbox();
+        var connection = new OutlookFolderConnection();
         try
         {
-            inbox.Connect();
-            return inbox;
+            connection.Connect(defaultFolder, owner);
+            return connection;
         }
         catch
         {
-            inbox.Dispose();
+            connection.Dispose();
             throw;
         }
     }
 
-    private void Connect()
+    private void Connect(int defaultFolder, string? owner)
     {
         using var currentProcess = Process.GetCurrentProcess();
         var sessionId = currentProcess.SessionId;
@@ -47,13 +48,45 @@ internal sealed class OutlookInbox : IDisposable
         }
 
         session = ((dynamic)application).GetNamespace("MAPI");
-        folder = ((dynamic)session!).GetDefaultFolder(InboxFolder);
+        if (owner is null)
+        {
+            folder = ((dynamic)Session).GetDefaultFolder(defaultFolder);
+            return;
+        }
+
+        var recipient = ResolveRecipient(owner);
+        try
+        {
+            folder = ((dynamic)Session).GetSharedDefaultFolder((dynamic)recipient, defaultFolder);
+        }
+        finally
+        {
+            Release(recipient);
+        }
+    }
+
+    public object ResolveRecipient(string name)
+    {
+        object recipient = ((dynamic)Session).CreateRecipient(name);
+        try
+        {
+            if (!(bool)((dynamic)recipient).Resolve())
+            {
+                throw new InvalidOperationException($"Outlook で宛先を解決できませんでした。{name}");
+            }
+
+            return recipient;
+        }
+        catch
+        {
+            Release(recipient);
+            throw;
+        }
     }
 
     public object GetMail(string entryId)
     {
-        var storeId = (string)((dynamic)Folder).StoreID;
-        object? item = ((dynamic)session!).GetItemFromID(entryId, storeId);
+        var item = GetItem(entryId);
         try
         {
             if (item is null || (int)((dynamic)item).Class != MailItemClass)
@@ -72,6 +105,12 @@ internal sealed class OutlookInbox : IDisposable
 
     public object? GetReceivedItem(string entryId) => ((dynamic)session!).GetItemFromID(entryId);
 
+    public object? GetItem(string entryId)
+    {
+        var storeId = (string)((dynamic)Folder).StoreID;
+        return ((dynamic)session!).GetItemFromID(entryId, storeId);
+    }
+
     public void Dispose()
     {
         using var outlookToWaitFor = startedOutlook;
@@ -81,7 +120,7 @@ internal sealed class OutlookInbox : IDisposable
 
         // Outlook started by COM can exit after the last reference is released.
         // Quit would also close a window the user opened during the query.
-        if (outlookToWaitFor is not null && !outlookToWaitFor.WaitForExit(ShutdownTimeout))
+        if (outlookToWaitFor is not null && !outlookToWaitFor.WaitForExit(ShutdownTimeoutMilliseconds))
         {
             throw new InvalidOperationException(
                 $"COM 参照の解放後も Outlook (PID {outlookToWaitFor.Id}) が終了しませんでした。");
@@ -108,4 +147,7 @@ internal sealed class OutlookInbox : IDisposable
             }
         }
     }
+
+    internal static void Release(object? instance) => OutlookComObject.Release(instance);
+
 }
