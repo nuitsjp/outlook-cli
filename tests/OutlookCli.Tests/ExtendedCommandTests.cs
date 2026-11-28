@@ -434,7 +434,7 @@ public sealed class ExtendedCommandTests
         using var error = new StringWriter();
 
         var exitCode = Run(
-            command.Split(' ', StringSplitOptions.RemoveEmptyEntries),
+            command.Split([' '], StringSplitOptions.RemoveEmptyEntries),
             output,
             error,
             mailOperations,

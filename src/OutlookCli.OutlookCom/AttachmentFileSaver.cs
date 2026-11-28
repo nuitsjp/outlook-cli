@@ -7,8 +7,15 @@ internal static class AttachmentFileSaver
         Action<string> saveToPath,
         Func<string, string>? temporaryPathFactory = null)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
-        ArgumentNullException.ThrowIfNull(saveToPath);
+        if (string.IsNullOrWhiteSpace(destinationPath))
+        {
+            throw new ArgumentException("Value cannot be null or whitespace.", nameof(destinationPath));
+        }
+
+        if (saveToPath is null)
+        {
+            throw new ArgumentNullException(nameof(saveToPath));
+        }
 
         var fullPath = Path.GetFullPath(destinationPath);
         if (File.Exists(fullPath))
@@ -25,7 +32,7 @@ internal static class AttachmentFileSaver
             try
             {
                 // File.Move without overwrite is the final race-safe destination check.
-                File.Move(temporaryPath, fullPath, overwrite: false);
+                File.Move(temporaryPath, fullPath);
             }
             catch (IOException exception)
             {

@@ -23,7 +23,7 @@ public sealed class CommandExecutionTests
             throw new OutlookComCleanupException(operation, [release, shutdown], false));
 
         Assert.Equal(1, exitCode);
-        var messages = error.ToString().Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+        var messages = error.ToString().Split([Environment.NewLine], StringSplitOptions.RemoveEmptyEntries);
         Assert.Collection(messages,
             line =>
             {
@@ -68,7 +68,7 @@ public sealed class CommandExecutionTests
 
         Assert.Equal(1, exitCode);
         Assert.Equal("1" + Environment.NewLine, output.ToString());
-        Assert.Collection(error.ToString().Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries),
+        Assert.Collection(error.ToString().Split([Environment.NewLine], StringSplitOptions.RemoveEmptyEntries),
             line => Assert.Contains("writing row", line),
             line => Assert.Contains("closing folder", line));
     }
@@ -129,10 +129,12 @@ public sealed class CommandExecutionTests
             foreach (var id in new[] { "first", "second" })
             {
                 var previousLength = (int)output.Length;
-                onMail(new MailSummary("日本語", "", DateTimeOffset.UnixEpoch, id));
-                var bytes = output.ToArray().AsMemory(previousLength);
-                Assert.False(bytes.IsEmpty);
-                using var row = JsonDocument.Parse(bytes);
+                onMail(new MailSummary("日本語", "", DateTimeOffset.FromUnixTimeSeconds(0), id));
+                var bytes = output.ToArray();
+                Assert.True(bytes.Length > previousLength);
+                var notificationBytes = new byte[bytes.Length - previousLength];
+                Array.Copy(bytes, previousLength, notificationBytes, 0, notificationBytes.Length);
+                using var row = JsonDocument.Parse(notificationBytes);
                 VisibleIds.Add(row.RootElement.GetProperty("entryId").GetString()!);
             }
         }

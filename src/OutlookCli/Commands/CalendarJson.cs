@@ -16,7 +16,10 @@ internal class CalendarSummaryJson(CalendarSummary summary)
 
 internal sealed class CalendarDetailJson(CalendarDetail detail) : CalendarSummaryJson(detail.Summary)
 {
-    [JsonPropertyOrder(1)] public string Organizer => detail.Organizer;
-    [JsonPropertyOrder(1)] public IReadOnlyList<CalendarAttendee> Attendees => detail.Attendees;
-    [JsonPropertyOrder(1)] public string Body => detail.Body;
+    [JsonPropertyOrder(1), Newtonsoft.Json.JsonProperty(Order = 1)]
+    public string Organizer => detail.Organizer;
+    [JsonPropertyOrder(1), Newtonsoft.Json.JsonProperty(Order = 1)]
+    public IReadOnlyList<CalendarAttendee> Attendees => detail.Attendees;
+    [JsonPropertyOrder(1), Newtonsoft.Json.JsonProperty(Order = 1)]
+    public string Body => detail.Body;
 }

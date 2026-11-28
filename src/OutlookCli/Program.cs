@@ -38,6 +38,13 @@ internal static class Program
         TextWriter error)
     {
         var root = new RootCommand("クラシック Outlook を操作します。");
+        var ascii = new Option<bool>("--ascii")
+        {
+            Description = "JSON の非 ASCII 文字を Unicode エスケープで出力します。",
+            Recursive = true,
+        };
+        root.Options.Add(ascii);
+
         var json = new JsonOutput(output);
         var mail = new Command("mail", "メールを操作します。");
         var help = (HelpAction)root.Options.OfType<HelpOption>().Single().Action!;
@@ -75,6 +82,7 @@ internal static class Program
         var task = new TaskCommand(services.TaskService, json, error).Create();
         task.SetAction(help.Invoke);
         root.Subcommands.Add(task);
+        root.Subcommands.Add(new UpdateCommand(json, error).Create());
 
         var parsed = root.Parse(args);
         if (parsed.Errors.Count > 0)
@@ -87,6 +95,7 @@ internal static class Program
             return 1;
         }
 
+        json.AsciiOnly = parsed.GetValue(ascii);
         return parsed.Invoke(new InvocationConfiguration { Output = output, Error = error });
     }
 

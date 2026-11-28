@@ -14,8 +14,12 @@ internal class MailSummaryJson(MailSummary summary)
 
 internal sealed class MailDetailJson(MailDetail detail) : MailSummaryJson(detail.Summary)
 {
-    [JsonPropertyOrder(1)] public string To => detail.To;
-    [JsonPropertyOrder(1)] public string Cc => detail.Cc;
-    [JsonPropertyOrder(1)] public string Bcc => detail.Bcc;
-    [JsonPropertyOrder(1)] public string Body => detail.Body;
+    [JsonPropertyOrder(1), Newtonsoft.Json.JsonProperty(Order = 1)]
+    public string To => detail.To;
+    [JsonPropertyOrder(1), Newtonsoft.Json.JsonProperty(Order = 1)]
+    public string Cc => detail.Cc;
+    [JsonPropertyOrder(1), Newtonsoft.Json.JsonProperty(Order = 1)]
+    public string Bcc => detail.Bcc;
+    [JsonPropertyOrder(1), Newtonsoft.Json.JsonProperty(Order = 1)]
+    public string Body => detail.Body;
 }

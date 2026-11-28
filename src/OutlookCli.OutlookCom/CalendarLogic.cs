@@ -9,7 +9,11 @@ internal static class CalendarLogic
 
     internal static string EncodeId(string entryId, DateTime? originalUtc)
     {
-        ArgumentNullException.ThrowIfNull(entryId);
+        if (entryId is null)
+        {
+            throw new ArgumentNullException(nameof(entryId));
+        }
+
         return IdPrefix + entryId + (originalUtc is DateTime original
             ? "." + original.Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture)
             : string.Empty);
@@ -18,7 +22,7 @@ internal static class CalendarLogic
     internal static (string EntryId, DateTime? OriginalUtc) DecodeId(string? id)
     {
         const string invalidId = "予定の ID が不正です。一覧で取得した ID を指定してください。";
-        if (string.IsNullOrEmpty(id) || !id.StartsWith(IdPrefix, StringComparison.Ordinal))
+        if (id is null || id.Length == 0 || !id.StartsWith(IdPrefix, StringComparison.Ordinal))
         {
             throw new InvalidOperationException(invalidId);
         }
@@ -60,7 +64,11 @@ internal static class CalendarLogic
         DateTime from,
         DateTime to)
     {
-        ArgumentNullException.ThrowIfNull(appointments);
+        if (appointments is null)
+        {
+            throw new ArgumentNullException(nameof(appointments));
+        }
+
         var slotCount = (int)((to - from).TotalMinutes / MinutesPerSlot);
         var slots = new int[slotCount];
         foreach (var appointment in appointments)

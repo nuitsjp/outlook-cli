@@ -8,8 +8,10 @@ namespace OutlookCli.Tests;
 
 public sealed class CalendarCommandTests
 {
-    [Fact]
-    public void List_passes_dates_as_unspecified_and_writes_one_json_line_per_item()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void List_passes_dates_as_unspecified_and_writes_one_json_line_per_item(bool asciiOnly)
     {
         var from = new DateTime(2026, 11, 1);
         var to = new DateTime(2026, 12, 1);
@@ -31,8 +33,11 @@ public sealed class CalendarCommandTests
         var output = new StringWriter();
         var error = new StringWriter();
 
+        string[] args = asciiOnly
+            ? ["--ascii", "calendar", "list", "--from", "2026-11-01", "--to", "2026-12-01"]
+            : ["calendar", "list", "--from", "2026-11-01", "--to", "2026-12-01"];
         var exitCode = CliTestSupport.Run(
-            ["calendar", "list", "--from", "2026-11-01", "--to", "2026-12-01"],
+            args,
             UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, UnusedMailSender(), output, error);
 
         Assert.Equal(0, exitCode);
@@ -45,7 +50,8 @@ public sealed class CalendarCommandTests
 
         var lines = ReadLines(output.ToString());
         Assert.Equal(2, lines.Count);
-        AssertAsciiJson(lines[0]);
+        AssertJsonEncoding(lines[0], first.Subject, asciiOnly);
+        AssertJsonEncoding(lines[0], first.Location, asciiOnly);
         AssertSummaryJson(lines[0], first);
         AssertSummaryJson(lines[1], second);
     }
@@ -122,8 +128,10 @@ public sealed class CalendarCommandTests
         Assert.Empty(query.ListArguments);
     }
 
-    [Fact]
-    public void Show_calls_get_once_preserves_id_and_writes_summary_and_details()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Show_calls_get_once_preserves_id_and_writes_summary_and_details(bool asciiOnly)
     {
         const string id = "  calendar-id-42  ";
         var summary = new CalendarSummary(
@@ -146,8 +154,11 @@ public sealed class CalendarCommandTests
         var output = new StringWriter();
         var error = new StringWriter();
 
+        string[] args = asciiOnly
+            ? ["--ascii", "calendar", "show", "--id", id]
+            : ["calendar", "show", "--id", id];
         var exitCode = CliTestSupport.Run(
-            ["calendar", "show", "--id", id],
+            args,
             UnusedMailQuery(), UnusedUpdater(), UnusedWatcher(), query, UnusedMailSender(), output, error);
 
         Assert.Equal(0, exitCode);
@@ -155,7 +166,8 @@ public sealed class CalendarCommandTests
         Assert.Equal([id], query.GetArguments);
 
         var line = Assert.Single(ReadLines(output.ToString()));
-        AssertAsciiJson(line);
+        AssertJsonEncoding(line, detail.Organizer, asciiOnly);
+        AssertJsonEncoding(line, detail.Body.Split('\n')[0], asciiOnly);
         using var json = JsonDocument.Parse(line);
         var root = json.RootElement;
         Assert.Equal(JsonValueKind.Object, root.ValueKind);
@@ -248,7 +260,6 @@ public sealed class CalendarCommandTests
         var call = Assert.Single(operations.Created);
         Assert.Equal(TimeSpan.FromHours(9), call.Start.Offset);
         Assert.Equal(TimeSpan.FromHours(1), call.End - call.Start);
-        AssertAsciiJson(output.ToString());
         using var json = JsonDocument.Parse(output.ToString());
         Assert.Equal("appointment-id", json.RootElement.GetProperty("id").GetString());
     }
@@ -331,8 +342,18 @@ public sealed class CalendarCommandTests
         Assert.Equal(expected.Location, root.GetProperty("location").GetString());
     }
 
-    private static void AssertAsciiJson(string text) =>
-        Assert.All(text, character => Assert.True(character <= '\u007F'));
+    private static void AssertJsonEncoding(string line, string unicodeText, bool asciiOnly)
+    {
+        if (asciiOnly)
+        {
+            Assert.All(line, character => Assert.True(character <= '\u007F'));
+            Assert.Contains("\\u", line, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Contains(unicodeText, line, StringComparison.Ordinal);
+        }
+    }
 
     private static List<string> ReadLines(string text)
     {

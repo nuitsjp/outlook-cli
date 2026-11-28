@@ -12,7 +12,11 @@ internal sealed class ComCleanup
 
     internal ComCleanup(Action<object> release)
     {
-        ArgumentNullException.ThrowIfNull(release);
+        if (release is null)
+        {
+            throw new ArgumentNullException(nameof(release));
+        }
+
         this.release = release;
     }
 
