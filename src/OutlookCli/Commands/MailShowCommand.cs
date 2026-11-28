@@ -1,11 +1,10 @@
 using System.CommandLine;
 using System.Runtime.InteropServices;
-using System.Text.Json;
 using OutlookCli.Core.Mail;
 
 namespace OutlookCli.Commands;
 
-internal sealed class MailShowCommand(IMailQuery query, TextWriter output, TextWriter error)
+internal sealed class MailShowCommand(IMailQuery query, JsonOutput json, TextWriter error)
 {
     public Command Create()
     {
@@ -22,7 +21,7 @@ internal sealed class MailShowCommand(IMailQuery query, TextWriter output, TextW
 
     private int Execute(string? entryId)
     {
-        if (string.IsNullOrWhiteSpace(entryId))
+        if (entryId is null || string.IsNullOrWhiteSpace(entryId))
         {
             error.WriteLine("--entry-id にメールの Entry ID を指定してください。");
             return 1;
@@ -31,7 +30,7 @@ internal sealed class MailShowCommand(IMailQuery query, TextWriter output, TextW
         try
         {
             var mail = query.Get(entryId);
-            output.WriteLine(JsonSerializer.Serialize(new
+            json.WriteLine(new
             {
                 schemaVersion = 1,
                 mail.Summary.EntryId,
@@ -42,7 +41,7 @@ internal sealed class MailShowCommand(IMailQuery query, TextWriter output, TextW
                 mail.Cc,
                 mail.Bcc,
                 mail.Body,
-            }, MailJson.Options));
+            });
             return 0;
         }
         catch (COMException exception)

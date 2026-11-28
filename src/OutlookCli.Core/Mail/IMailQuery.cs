@@ -2,6 +2,6 @@ namespace OutlookCli.Core.Mail;
 
 public interface IMailQuery
 {
-    IEnumerable<MailSummary> List(bool unreadOnly);
+    IEnumerable<MailSummary> List(MailListFilter filter);
     MailDetail Get(string entryId);
 }
